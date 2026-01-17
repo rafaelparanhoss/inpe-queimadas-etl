@@ -72,6 +72,3 @@ PYTHONPATH=src python -m uv run pytest -q
 - [ ] Evitar reprocessar datas já carregadas (`file_date`)
 - [ ] Agregação por município (IBGE) e tabela diária `focos_por_municipio`
 - [ ] Métricas de execução (tempo, inseridos, duplicados, descartados)
-
-## Licença
-MIT (ou outra a definir).
