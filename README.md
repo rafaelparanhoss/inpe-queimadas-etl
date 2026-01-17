@@ -1,17 +1,34 @@
+# INPE Queimadas — ETL diário (Brasil) → PostGIS
+
+ETL geoespacial para ingestão diária de focos de queimadas (INPE, CSV público) e carga em PostGIS, com camadas `raw/curated` para auditoria e análise.
+
+## Stack
+Python 3.11 • pandas • requests • psycopg • PostGIS • Docker • uv
+
 ## Decisões técnicas
+- **`raw` vs `curated`**
+  - `raw`: preserva o dado “como veio” (inclui `props` completo) para auditoria/reprocessamento.
+  - `curated`: tabela enxuta, padronizada e indexada para consulta espacial.
+- **`props` em `jsonb`**
+  - evita migração de schema quando a fonte muda colunas;
+  - mantém rastreabilidade e permite inspeção pontual.
+- **Dedup por `event_hash`**
+  - idempotência (rodar a mesma data não duplica);
+  - `ON CONFLICT DO NOTHING`.
+- **SRID 4326**
+  - a fonte já vem em lat/lon (WGS84).
 
-- **Camadas `raw` e `curated` (PostGIS):**
-  - `raw`: guarda o registro “como veio” (inclui `props` completo), permite auditoria, reprocessamento e rastreio de mudanças na fonte.
-  - `curated`: tabela enxuta e padronizada para análise espacial/indicadores (índices, campos principais, geometria pronta).
+## Banco
+Tabelas:
+- `raw.inpe_focos`
+- `curated.inpe_focos`
 
-- **`props` em `jsonb`:**
-  - preserva colunas variáveis do CSV do INPE sem quebrar o schema do banco;
-  - facilita inspeção e filtros pontuais (ex.: extrair um atributo específico sem alterar tabela).
+Índices:
+- GiST em `geom`
+- B-tree em `file_date`
 
-- **Deduplicação por `event_hash`:**
-  - a fonte pode ser rebaixada/reprocessada e o pipeline precisa ser idempotente;
-  - `event_hash` (baseado em data + coordenadas + timestamp/satélite quando disponível) permite `ON CONFLICT DO NOTHING`.
+## Como rodar
 
-- **SRID 4326 (WGS84):**
-  - o CSV do INPE é distribuído em lat/lon geográficas;
-  - 4326 é o padrão para integração com outras bases e para consultas espaciais rápidas (ex.: BBOX, interseção com limites administrativos).
+### 1) Subir PostGIS
+```bash
+docker compose up -d
