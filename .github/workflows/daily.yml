@@ -32,10 +32,15 @@ jobs:
       - name: install uv
         run: python -m pip install uv
 
+      - name: uv debug
+        run: |
+          uv --version
+          which uv
+
       - name: install deps
         run: |
-          python -m uv sync
-          python -m uv pip install -e .
+          uv sync
+          uv pip install -e .
 
       - name: make scripts executable
         run: |
@@ -95,15 +100,15 @@ jobs:
         run: |
           date_str="${{ steps.run_date.outputs.date }}"
           if [ "${{ steps.run_date.outputs.source }}" = "input" ]; then
-            python -m uv run python -m etl.app run --date "$date_str" --checks
+            uv run python -m etl.app run --date "$date_str" --checks
           else
-            python -m uv run python -m etl.app today --date "$date_str"
+            uv run python -m etl.app today --date "$date_str"
           fi
 
       - name: run report
         run: |
           date_str="${{ steps.run_date.outputs.date }}"
-          python -m uv run python -m etl.app report --date "$date_str"
+          uv run python -m etl.app report --date "$date_str"
 
       - name: upload artifacts
         uses: actions/upload-artifact@v4

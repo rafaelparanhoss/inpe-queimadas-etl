@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+source "$(dirname "${BASH_SOURCE[0]}")/_uv.sh"
+
 export PYTHONPATH=src
-python -m uv run python -m etl.app reprocess "$@"
+uv_cmd run python -m etl.app reprocess "$@"

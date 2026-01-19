@@ -4,6 +4,7 @@ import datetime as dt
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import psycopg
@@ -52,7 +53,11 @@ def _run_script(script: Path, args: list[str]) -> None:
 def _run_cli(date_str: str) -> None:
     env = os.environ.copy()
     env["PYTHONPATH"] = "src"
-    cmd = ["python", "-m", "uv", "run", "python", "-m", "etl.cli", "--date", date_str]
+    uv_bin = shutil.which("uv")
+    if uv_bin:
+        cmd = [uv_bin, "run", "python", "-m", "etl.cli", "--date", date_str]
+    else:
+        cmd = [sys.executable, "-m", "uv", "run", "python", "-m", "etl.cli", "--date", date_str]
     subprocess.run(cmd, check=True, cwd=_repo_root(), env=env)
 
 

@@ -3,6 +3,7 @@ set -euo pipefail
 
 date_str=""
 do_checks=0
+source "$(dirname "${BASH_SOURCE[0]}")/_uv.sh"
 
 usage() {
   echo "usage: scripts/run_all.sh --date YYYY-MM-DD [--checks]" >&2
@@ -45,7 +46,7 @@ PY
 echo "[run_all] start | date=${date_str}"
 
 bash scripts/run_ref.sh
-PYTHONPATH=src python -m uv run python -m etl.cli --date "${date_str}"
+PYTHONPATH=src uv_cmd run python -m etl.cli --date "${date_str}"
 bash scripts/run_enrich.sh --date "${date_str}"
 bash scripts/run_marts.sh --date "${date_str}"
 

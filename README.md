@@ -43,18 +43,18 @@ docker compose up -d
 
 ### 2) Preparar ambiente Python
 ```bash
-python -m uv sync
-python -m uv pip install -e .
+uv sync
+uv pip install -e .
 ```
 
 ### 2.1) Comandos oficiais (python)
 Os comandos python sao os oficiais. Os scripts em `scripts/*.sh` sao wrappers compat.
 ```bash
-python -m uv run python -m etl.app run --date 2026-01-18 --checks
-python -m uv run python -m etl.app report --date 2026-01-18
-python -m uv run python -m etl.app reprocess --date 2026-01-18
-python -m uv run python -m etl.app checks --date 2026-01-18
-python -m uv run python -m etl.app today
+uv run python -m etl.app run --date 2026-01-18 --checks
+uv run python -m etl.app report --date 2026-01-18
+uv run python -m etl.app reprocess --date 2026-01-18
+uv run python -m etl.app checks --date 2026-01-18
+uv run python -m etl.app today
 ```
 
 ### 3) Rodar tudo (ref -> ingestao INPE -> enrich -> marts)
