@@ -1,14 +1,18 @@
-# src/etl/transform.py
 from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
 from dataclasses import dataclass
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
+
+_filename = Path(__file__).stem
+log = logging.getLogger(_filename)
 
 
 def _norm_cols(df: pd.DataFrame) -> pd.DataFrame:
@@ -28,6 +32,7 @@ def _find_col(df: pd.DataFrame, preferred: list[str], contains: list[str]) -> st
         for c in cols:
             if key in c:
                 return c
+
     return None
 
 
@@ -36,26 +41,27 @@ def _to_float(s: pd.Series) -> pd.Series:
 
 
 def _clean_value(v: Any) -> Any:
-    """
-    Converte valores não representáveis em JSON (NaN/NA/inf) em None,
-    para permitir json.dumps(..., allow_nan=False).
-    """
-    # pandas NA/NaT/NaN
+    # convert non-json-safe values (nan/na/inf) to none
     try:
         if pd.isna(v):
             return None
     except Exception:
         pass
 
-    # floats especiais
     if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
         return None
 
-    # string "NaN"
-    if isinstance(v, str) and v.strip().lower() == "nan":
-        return None
+    if isinstance(v, str):
+        vv = v.strip().lower()
+        if vv in ("nan", "na", "null", "none", ""):
+            return None
 
     return v
+
+
+def _json_dumps_safe(d: dict[str, Any]) -> str:
+    # ensure valid json for postgres (no nan)
+    return json.dumps(d, ensure_ascii=False, default=str, allow_nan=False)
 
 
 @dataclass(frozen=True)
@@ -73,47 +79,110 @@ class Record:
 
 
 def transform_inpe_csv(path: str, file_date: date) -> list[Record]:
-    df = pd.read_csv(path, sep=None, engine="python", dtype=str)
+    # parse, clean, and shape records from INPE CSV
+    p = Path(path)
+
+    log.info("transform start | file_date=%s | path=%s", file_date.isoformat(), p.as_posix())
+    try:
+        log.debug("input file | exists=%s | size_bytes=%s", p.exists(), p.stat().st_size if p.exists() else None)
+    except Exception:
+        log.debug("input file | exists=%s | size_bytes=unknown", p.exists())
+
+    try:
+        df = pd.read_csv(p, sep=None, engine="python", dtype=str)
+    except Exception:
+        log.exception("read_csv failed | path=%s", p.as_posix())
+        raise
+
+    log.debug("read_csv ok | rows=%s | cols=%s", len(df), len(df.columns))
     df = _norm_cols(df)
+    log.debug("columns (norm) | %s", list(df.columns)[:60])
 
     lat_col = _find_col(df, preferred=["lat", "latitude"], contains=["lat"])
     lon_col = _find_col(df, preferred=["lon", "long", "longitude"], contains=["lon", "long"])
     if not lat_col or not lon_col:
-        raise ValueError(f"Não encontrei colunas de lat/lon. Colunas: {list(df.columns)[:50]}")
+        log.error("missing lat/lon columns | cols=%s", list(df.columns)[:80])
+        raise ValueError(f"não encontrei colunas de lat/lon. colunas: {list(df.columns)[:80]}")
 
-    df[lat_col] = _to_float(df[lat_col])
-    df[lon_col] = _to_float(df[lon_col])
-    df = df.dropna(subset=[lat_col, lon_col])
-
-    # timestamp (se existir)
     ts_col = _find_col(df, preferred=["datahora", "data_hora_gmt", "data_hora"], contains=["datahora", "hora", "gmt"])
     sat_col = _find_col(df, preferred=["satelite"], contains=["satel"])
     mun_col = _find_col(df, preferred=["municipio"], contains=["municip"])
     uf_col = _find_col(df, preferred=["estado", "uf"], contains=["estado", "uf"])
     bio_col = _find_col(df, preferred=["bioma"], contains=["bioma"])
 
+    log.info(
+        "columns picked | lat=%s | lon=%s | ts=%s | sat=%s | mun=%s | uf=%s | bioma=%s",
+        lat_col,
+        lon_col,
+        ts_col,
+        sat_col,
+        mun_col,
+        uf_col,
+        bio_col,
+    )
+
+    rows_in = len(df)
+
+    df[lat_col] = _to_float(df[lat_col])
+    df[lon_col] = _to_float(df[lon_col])
+
+    before_dropna = len(df)
+    df = df.dropna(subset=[lat_col, lon_col])
+    dropped_na = before_dropna - len(df)
+
+    before_range = len(df)
+    df = df[(df[lat_col].between(-90, 90)) & (df[lon_col].between(-180, 180))]
+    dropped_range = before_range - len(df)
+
+    log.info(
+        "coord filter | rows_in=%s | dropped_na=%s | dropped_range=%s | rows_out=%s",
+        rows_in,
+        dropped_na,
+        dropped_range,
+        len(df),
+    )
+
+    if len(df) == 0:
+        log.warning("no valid rows after coord filter | file_date=%s", file_date.isoformat())
+        return []
+
     recs: list[Record] = []
-    for _, row in df.iterrows():
-        props: dict[str, Any] = row.to_dict()
-        props = {k: _clean_value(v) for k, v in props.items()}
+    seen_hash: set[str] = set()
+    dup_count = 0
+    json_fallback = 0
+
+    for i, row_raw in enumerate(df.to_dict(orient="records")):
+        # pandas types keys as hashable; force str to avoid type checker noise
+        row = {str(k): v for k, v in row_raw.items()}
+        props: dict[str, Any] = {k: _clean_value(v) for k, v in row.items()}
 
         lat = float(props[lat_col])
         lon = float(props[lon_col])
+
         view_ts = props.get(ts_col) if ts_col else None
         sat = props.get(sat_col) if sat_col else None
 
-        payload = {
+        payload: dict[str, Any] = {
             "file_date": str(file_date),
             "lat": round(lat, 6),
             "lon": round(lon, 6),
             "view_ts": view_ts,
             "satelite": sat,
         }
-        event_hash = hashlib.md5(
-            json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str).encode("utf-8")
-        ).hexdigest()
 
-        props_json = json.dumps(props, ensure_ascii=False, default=str, allow_nan=False)
+        event_hash = hashlib.md5(_json_dumps_safe(payload).encode("utf-8")).hexdigest()
+
+        if event_hash in seen_hash:
+            dup_count += 1
+            continue
+        seen_hash.add(event_hash)
+
+        try:
+            props_json = _json_dumps_safe(props)
+        except ValueError:
+            json_fallback += 1
+            props = {str(k): _clean_value(v) for k, v in props.items()}
+            props_json = _json_dumps_safe(props)
 
         recs.append(
             Record(
@@ -129,5 +198,21 @@ def transform_inpe_csv(path: str, file_date: date) -> list[Record]:
                 props_json=props_json,
             )
         )
+
+        if i == 0:
+            log.debug(
+                "sample record | event_hash=%s | lat=%.6f | lon=%.6f | view_ts=%s | satelite=%s",
+                event_hash,
+                lat,
+                lon,
+                view_ts,
+                sat,
+            )
+
+    log.info("transform done | records=%s | dup_in_file=%s | json_fallback=%s", len(recs), dup_count, json_fallback)
+
+    if recs:
+        sats = sorted({(r.satelite or "").strip() for r in recs if r.satelite})
+        log.debug("summary | unique_satelites=%s", sats[:30])
 
     return recs

@@ -1,5 +1,4 @@
-def main():
-    print("Hello from inpe-queimadas-etl!")
+from etl.runner import main
 
 
 if __name__ == "__main__":
