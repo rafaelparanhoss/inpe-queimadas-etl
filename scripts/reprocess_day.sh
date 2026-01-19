@@ -50,7 +50,22 @@ ${sql}
 SQL
 }
 
-sql_counts() {
+psql_query() {
+  local sql="$1"
+  MSYS_NO_PATHCONV=1 docker exec -i -e PAGER=cat "${container}" \
+    psql -U "${db_user}" -d "${db_name}" -v ON_ERROR_STOP=1 -t -A -F "|" -c "${sql}" \
+    | tr -d '\r'
+}
+
+sql_counts_basic() {
+  cat <<SQL
+select
+  (select count(*) from raw.inpe_focos where file_date = '${date_str}'::date) as raw_n,
+  (select count(*) from curated.inpe_focos_enriched where file_date = '${date_str}'::date) as curated_n;
+SQL
+}
+
+sql_counts_full() {
   cat <<SQL
 select
   (select count(*) from raw.inpe_focos where file_date = '${date_str}'::date) as raw_n,
@@ -74,10 +89,10 @@ log "counts before"
 if [[ "${dry_run}" -eq 1 ]]; then
   log "dry-run sql:"
   echo
-  sql_counts
+  sql_counts_full
   echo
 else
-  psql_exec "$(sql_counts)"
+  psql_exec "$(sql_counts_full)"
 fi
 
 log "delete day (raw + curated)"
@@ -90,14 +105,14 @@ else
   psql_exec "$(sql_delete_day)"
 fi
 
-log "counts after delete"
+log "counts after delete (marts may be stale)"
 if [[ "${dry_run}" -eq 1 ]]; then
   log "dry-run sql:"
   echo
-  sql_counts
+  sql_counts_basic
   echo
 else
-  psql_exec "$(sql_counts)"
+  psql_exec "$(sql_counts_basic)"
 fi
 
 if [[ "${dry_run}" -eq 1 ]]; then
@@ -115,6 +130,23 @@ log "run marts"
 bash scripts/run_marts.sh
 
 log "final checks"
-psql_exec "$(sql_counts)"
+counts_row="$(psql_query "$(sql_counts_full)")"
+IFS="|" read -r raw_n curated_n marts_day_sum <<< "${counts_row}"
+log "final counts | raw_n=${raw_n} | curated_n=${curated_n} | marts_day_sum=${marts_day_sum}"
+
+if [[ -z "${raw_n}" || -z "${curated_n}" || -z "${marts_day_sum}" ]]; then
+  log "error | missing counts in final checks"
+  exit 1
+fi
+
+if [[ "${raw_n}" -ne "${curated_n}" ]]; then
+  log "error | raw_n != curated_n | raw_n=${raw_n} | curated_n=${curated_n}"
+  exit 1
+fi
+
+if [[ "${marts_day_sum}" -ne "${curated_n}" ]]; then
+  log "error | marts_day_sum != curated_n | marts_day_sum=${marts_day_sum} | curated_n=${curated_n}"
+  exit 1
+fi
 
 log "done"

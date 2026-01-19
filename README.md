@@ -66,6 +66,22 @@ docker exec -it geoetl_postgis psql -U geoetl -d geoetl -c "select count(*) from
 docker exec -it geoetl_postgis psql -U geoetl -d geoetl -c "select count(*) - count(distinct event_hash) from curated.inpe_focos_enriched;"
 ```
 
+
+### 6) Reprocessar um dia
+```bash
+scripts/reprocess_day.sh --date 2026-01-18
+scripts/reprocess_day.sh --date 2026-01-18 --dry-run
+```
+
+### 7) Smoke checks
+```bash
+scripts/checks.sh
+scripts/checks.sh --date 2026-01-18
+```
+
+### 8) OK esperado (reprocess)
+raw_n=curated_n e marts_day_sum=curated_n
+
 ## Logs
 Arquivo gerado em `data/logs/etl.log`.
 
