@@ -26,10 +26,6 @@ def _repo_root() -> Path:
 
 
 def _find_bash() -> str:
-    bash = shutil.which("bash")
-    if bash:
-        return bash
-
     if os.name == "nt":
         candidates = [
             r"C:\Program Files\Git\bin\bash.exe",
@@ -38,6 +34,13 @@ def _find_bash() -> str:
         for candidate in candidates:
             if Path(candidate).exists():
                 return candidate
+
+    bash = shutil.which("bash")
+    if bash:
+        if os.name != "nt":
+            return bash
+        if "system32\\bash.exe" not in bash.lower():
+            return bash
 
     raise FileNotFoundError("bash not found on PATH")
 
