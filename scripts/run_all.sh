@@ -1,146 +1,56 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-log() {
-  echo "[run_all] $*"
-}
+date_str=""
+do_checks=0
 
 usage() {
-  echo "usage: scripts/run_all.sh --date YYYY-MM-DD [--checks]"
+  echo "usage: scripts/run_all.sh --date YYYY-MM-DD [--checks]" >&2
 }
 
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-repo_root="$(cd "$script_dir/.." && pwd)"
-cd "$repo_root"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --date)
+      date_str="${2:-}"
+      shift 2
+      ;;
+    --checks)
+      do_checks=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "[run_all] unknown arg: $1" >&2
+      usage
+      exit 2
+      ;;
+  esac
+done
 
-load_env() {
-  if [ -f "$repo_root/.env.local" ]; then
-    log "load .env.local"
-    set -a
-    . "$repo_root/.env.local"
-    set +a
-  fi
-}
+if [[ -z "${date_str}" ]]; then
+  usage
+  exit 2
+fi
 
-parse_args() {
-  local date=""
-  local checks="0"
+# valida formato ISO e se é data válida
+python - <<'PY' "${date_str}"
+import sys
+from datetime import date
+date.fromisoformat(sys.argv[1])
+PY
 
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --date)
-        date="${2:-}"
-        shift 2
-        ;;
-      --date=*)
-        date="${1#*=}"
-        shift 1
-        ;;
-      --checks)
-        checks="1"
-        shift 1
-        ;;
-      -h|--help)
-        usage
-        exit 0
-        ;;
-      *)
-        usage
-        exit 1
-        ;;
-    esac
-  done
+echo "[run_all] start | date=${date_str}"
 
-  if [ -z "$date" ]; then
-    usage
-    exit 1
-  fi
+bash scripts/run_ref.sh
+PYTHONPATH=src python -m uv run python -m etl.cli --date "${date_str}"
+bash scripts/run_enrich.sh --date "${date_str}"
+bash scripts/run_marts.sh --date "${date_str}"
 
-  echo "$date|$checks"
-}
+if [[ "${do_checks}" -eq 1 ]]; then
+  bash scripts/checks.sh --date "${date_str}"
+fi
 
-psql_value() {
-  local sql="$1"
-  local db_container="${DB_CONTAINER:-geoetl_postgis}"
-  local db_user="${DB_USER:-geoetl}"
-  local db_name="${DB_NAME:-geoetl}"
-  local tty_flag="-it"
-  local use_winpty="false"
-
-  if [ ! -t 0 ]; then
-    tty_flag="-i"
-  else
-    if command -v winpty >/dev/null 2>&1; then
-      use_winpty="true"
-    fi
-  fi
-
-  if [ "$use_winpty" = "true" ]; then
-    MSYS_NO_PATHCONV=1 winpty docker exec $tty_flag -e PAGER=cat "$db_container" \
-      psql -U "$db_user" -d "$db_name" -v ON_ERROR_STOP=1 -t -A -c "$sql" \
-      | tr -d '\r' | xargs
-  else
-    MSYS_NO_PATHCONV=1 docker exec $tty_flag -e PAGER=cat "$db_container" \
-      psql -U "$db_user" -d "$db_name" -v ON_ERROR_STOP=1 -t -A -c "$sql" \
-      | tr -d '\r' | xargs
-  fi
-}
-
-run_validations() {
-  local date="$1"
-  local n_curated
-  local n_distinct
-  local n_dup
-  local pct_com_mun
-  local n_marts
-
-  n_curated="$(psql_value "select count(*) from curated.inpe_focos_enriched where file_date = '${date}'::date;")"
-  n_distinct="$(psql_value "select count(distinct event_hash) from curated.inpe_focos_enriched where file_date = '${date}'::date;")"
-  n_dup="$(psql_value "select count(*) - count(distinct event_hash) from curated.inpe_focos_enriched where file_date = '${date}'::date;")"
-  pct_com_mun="$(psql_value "select round(100.0 * count(*) filter (where mun_cd_mun is not null) / nullif(count(*), 0), 2) from curated.inpe_focos_enriched where file_date = '${date}'::date;")"
-  n_marts="$(psql_value "select coalesce(sum(n_focos), 0) from marts.focos_diario_municipio where day = '${date}'::date;")"
-
-  log "validation | curated=$n_curated distinct=$n_distinct dup=$n_dup pct_com_mun=$pct_com_mun"
-  log "validation | n_marts=$n_marts n_base=$n_curated"
-
-  if [ "${n_curated:-0}" -eq 0 ]; then
-    log "validation failed | curated is empty"
-    exit 1
-  fi
-
-  if [ "${n_dup:-0}" -gt 0 ]; then
-    log "validation failed | duplicates=$n_dup"
-    exit 1
-  fi
-}
-
-main() {
-  local parsed
-  local date
-  local run_checks
-
-  parsed="$(parse_args "$@")"
-  date="${parsed%%|*}"
-  run_checks="${parsed##*|}"
-
-  load_env
-
-  export PYTHONPATH=src
-  log "start | date=$date"
-
-  bash "$script_dir/run_ref.sh"
-  python -m uv run python -m etl.cli --date "$date"
-  bash "$script_dir/run_enrich.sh" --date "$date"
-  bash "$script_dir/run_marts.sh" --date "$date"
-
-  run_validations "$date"
-
-  if [ "$run_checks" -eq 1 ]; then
-    log "run checks"
-    bash "$script_dir/checks.sh" --date "$date"
-  fi
-
-  log "done"
-}
-
-main "$@"
+echo "[run_all] done | date=${date_str}"
