@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .config import settings
 from .checks import run_checks
+from .report import run_report
 
 try:
     from zoneinfo import ZoneInfo
@@ -114,7 +115,7 @@ def cmd_checks(date_str: str | None) -> None:
 
 
 def cmd_report(date_str: str) -> None:
-    _run_script(_repo_root() / "scripts" / "report_day.sh", ["--date", _validate_date(date_str)])
+    run_report(_validate_date(date_str))
 
 
 def cmd_reprocess(date_str: str, dry_run: bool) -> None:
@@ -135,7 +136,7 @@ def cmd_today(date_str: str | None) -> None:
     resolved = _resolve_today(date_str)
     _run_script(_repo_root() / "scripts" / "run_all.sh", ["--date", resolved])
     cmd_checks(resolved)
-    _run_script(_repo_root() / "scripts" / "report_day.sh", ["--date", resolved])
+    cmd_report(resolved)
 
 
 def _build_parser() -> argparse.ArgumentParser:
