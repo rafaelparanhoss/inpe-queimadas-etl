@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .config import settings
 from .checks import run_checks
+from .reprocess import run_reprocess
 from .report import run_report
 
 try:
@@ -119,10 +120,7 @@ def cmd_report(date_str: str) -> None:
 
 
 def cmd_reprocess(date_str: str, dry_run: bool) -> None:
-    args = ["--date", _validate_date(date_str)]
-    if dry_run:
-        args.append("--dry-run")
-    _run_script(_repo_root() / "scripts" / "reprocess_day.sh", args)
+    run_reprocess(_validate_date(date_str), dry_run)
 
 
 def cmd_run(date_str: str, checks: bool) -> None:
