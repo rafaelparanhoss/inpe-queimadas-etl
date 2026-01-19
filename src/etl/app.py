@@ -14,6 +14,7 @@ from .config import settings
 from .checks import run_checks
 from .reprocess import run_reprocess
 from .report import run_report
+from .today import run_today
 
 try:
     from zoneinfo import ZoneInfo
@@ -132,9 +133,7 @@ def cmd_run(date_str: str, checks: bool) -> None:
 
 def cmd_today(date_str: str | None) -> None:
     resolved = _resolve_today(date_str)
-    _run_script(_repo_root() / "scripts" / "run_all.sh", ["--date", resolved])
-    cmd_checks(resolved)
-    cmd_report(resolved)
+    run_today(resolved)
 
 
 def _build_parser() -> argparse.ArgumentParser:
