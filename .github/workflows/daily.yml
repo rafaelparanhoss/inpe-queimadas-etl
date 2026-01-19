@@ -13,8 +13,14 @@ on:
 jobs:
   run:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
     env:
       TZ: America/Sao_Paulo
+      DB_CONTAINER: geoetl_postgis
+      DB_USER: geoetl
+      DB_NAME: geoetl
     steps:
       - uses: actions/checkout@v4
 
@@ -34,16 +40,87 @@ jobs:
       - name: start db
         run: docker compose up -d
 
-      - name: run pipeline
+      - name: wait for db
+        run: |
+          for i in $(seq 1 30); do
+            if docker exec "$DB_CONTAINER" pg_isready -U "$DB_USER" -d "$DB_NAME"; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs "$DB_CONTAINER"
+          exit 1
+
+      - name: make scripts executable
+        run: |
+          chmod +x scripts/*.sh
+          if [ -f ./run_today.sh ]; then
+            chmod +x ./run_today.sh
+          fi
+          if [ -f ./report_day.sh ]; then
+            chmod +x ./report_day.sh
+          fi
+
+      - name: resolve date
+        id: run_date
         run: |
           if [ -n "${{ github.event.inputs.date }}" ]; then
-            bash scripts/run_today.sh --date "${{ github.event.inputs.date }}"
+            echo "date=${{ github.event.inputs.date }}" >> "$GITHUB_OUTPUT"
+            echo "source=input" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if TZ=America/Sao_Paulo date +%F >/dev/null 2>&1; then
+            date_str="$(TZ=America/Sao_Paulo date +%F)"
           else
-            bash scripts/run_today.sh
+            date_str="$(python - <<'PY'
+import datetime
+import os
+import time
+
+os.environ.setdefault("TZ", "America/Sao_Paulo")
+if hasattr(time, "tzset"):
+    time.tzset()
+
+print(datetime.date.today().isoformat())
+PY
+)"
+          fi
+          echo "date=$date_str" >> "$GITHUB_OUTPUT"
+          echo "source=tz" >> "$GITHUB_OUTPUT"
+
+      - name: run pipeline
+        run: |
+          mkdir -p data/logs "data/reports/${{ steps.run_date.outputs.date }}"
+          if [ "${{ steps.run_date.outputs.source }}" = "input" ]; then
+            bash scripts/run_all.sh --date "${{ steps.run_date.outputs.date }}" 2>&1 \
+              | tee "data/logs/run_all_${{ steps.run_date.outputs.date }}.log"
+          else
+            if [ -f scripts/run_today.sh ]; then
+              bash scripts/run_today.sh --date "${{ steps.run_date.outputs.date }}"
+            elif [ -f ./run_today.sh ]; then
+              bash ./run_today.sh --date "${{ steps.run_date.outputs.date }}"
+            else
+              echo "run_today.sh not found" >&2
+              exit 1
+            fi
+          fi
+
+      - name: run report
+        run: |
+          if [ -f scripts/report_day.sh ]; then
+            bash scripts/report_day.sh --date "${{ steps.run_date.outputs.date }}" 2>&1 \
+              | tee "data/logs/report_${{ steps.run_date.outputs.date }}.log"
+          elif [ -f ./report_day.sh ]; then
+            bash ./report_day.sh --date "${{ steps.run_date.outputs.date }}" 2>&1 \
+              | tee "data/logs/report_${{ steps.run_date.outputs.date }}.log"
+          else
+            echo "report_day.sh not found" >&2
+            exit 1
           fi
 
       - name: upload artifacts
         uses: actions/upload-artifact@v4
+        if: ${{ always() }}
         with:
           name: reports-and-logs
           path: |
