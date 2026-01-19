@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 from .config import settings
+from .checks import run_checks
 
 try:
     from zoneinfo import ZoneInfo
@@ -107,10 +108,9 @@ def _resolve_today(date_str: str | None) -> str:
 
 
 def cmd_checks(date_str: str | None) -> None:
-    args: list[str] = []
     if date_str:
-        args = ["--date", _validate_date(date_str)]
-    _run_script(_repo_root() / "scripts" / "checks.sh", args)
+        date_str = _validate_date(date_str)
+    run_checks(date_str)
 
 
 def cmd_report(date_str: str) -> None:
@@ -134,7 +134,7 @@ def cmd_run(date_str: str, checks: bool) -> None:
 def cmd_today(date_str: str | None) -> None:
     resolved = _resolve_today(date_str)
     _run_script(_repo_root() / "scripts" / "run_all.sh", ["--date", resolved])
-    _run_script(_repo_root() / "scripts" / "checks.sh", ["--date", resolved])
+    cmd_checks(resolved)
     _run_script(_repo_root() / "scripts" / "report_day.sh", ["--date", resolved])
 
 
