@@ -1,0 +1,52 @@
+name: daily
+
+on:
+  schedule:
+    - cron: "30 9 * * *"
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "override date (YYYY-MM-DD)"
+        required: false
+        type: string
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    env:
+      TZ: America/Sao_Paulo
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: set up python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: install uv
+        run: python -m pip install uv
+
+      - name: install deps
+        run: |
+          python -m uv sync
+          python -m uv pip install -e .
+
+      - name: start db
+        run: docker compose up -d
+
+      - name: run pipeline
+        run: |
+          if [ -n "${{ github.event.inputs.date }}" ]; then
+            bash scripts/run_today.sh --date "${{ github.event.inputs.date }}"
+          else
+            bash scripts/run_today.sh
+          fi
+
+      - name: upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports-and-logs
+          path: |
+            data/reports/**
+            data/logs/**
+          if-no-files-found: warn

@@ -87,6 +87,22 @@ scripts/checks.sh --date 2026-01-18
 ### 9) OK esperado (reprocess)
 raw_n=curated_n e marts_day_sum=curated_n
 
+
+
+### 10) Rodar hoje
+```bash
+scripts/run_today.sh
+scripts/run_today.sh --date 2026-01-18
+```
+
+### 11) Gerar report de um dia
+```bash
+scripts/report_day.sh --date 2026-01-18
+```
+
+### 12) GitHub Actions (artifacts)
+- ver em: Actions -> workflow "daily" -> artifacts
+
 ## Logs
 Arquivo gerado em `data/logs/etl.log`.
 
