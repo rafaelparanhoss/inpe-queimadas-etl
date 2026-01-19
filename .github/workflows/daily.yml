@@ -95,29 +95,15 @@ jobs:
         run: |
           date_str="${{ steps.run_date.outputs.date }}"
           if [ "${{ steps.run_date.outputs.source }}" = "input" ]; then
-            bash scripts/run_all.sh --date "$date_str" --checks
+            python -m uv run python -m etl.app run --date "$date_str" --checks
           else
-            if [ -f scripts/run_today.sh ]; then
-              bash scripts/run_today.sh --date "$date_str"
-            elif [ -f ./run_today.sh ]; then
-              bash ./run_today.sh --date "$date_str"
-            else
-              echo "run_today.sh not found" >&2
-              exit 1
-            fi
+            python -m uv run python -m etl.app today --date "$date_str"
           fi
 
       - name: run report
         run: |
           date_str="${{ steps.run_date.outputs.date }}"
-          if [ -f scripts/report_day.sh ]; then
-            bash scripts/report_day.sh --date "$date_str"
-          elif [ -f ./report_day.sh ]; then
-            bash ./report_day.sh --date "$date_str"
-          else
-            echo "report_day.sh not found" >&2
-            exit 1
-          fi
+          python -m uv run python -m etl.app report --date "$date_str"
 
       - name: upload artifacts
         uses: actions/upload-artifact@v4
