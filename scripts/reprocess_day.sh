@@ -124,10 +124,10 @@ log "run etl cli (raw load)"
 PYTHONPATH=src python -m uv run python -m etl.cli --date "${date_str}"
 
 log "run enrich"
-bash scripts/run_enrich.sh
+bash scripts/run_enrich.sh --date "${date_str}"
 
 log "run marts"
-bash scripts/run_marts.sh
+bash scripts/run_marts.sh --date "${date_str}"
 
 log "final checks"
 counts_row="$(psql_query "$(sql_counts_full)")"

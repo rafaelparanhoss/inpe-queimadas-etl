@@ -6,7 +6,7 @@ log() {
 }
 
 usage() {
-  echo "usage: scripts/run_all.sh --date YYYY-MM-DD"
+  echo "usage: scripts/run_all.sh --date YYYY-MM-DD [--checks]"
 }
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,6 +24,7 @@ load_env() {
 
 parse_args() {
   local date=""
+  local checks="0"
 
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -34,6 +35,14 @@ parse_args() {
       --date=*)
         date="${1#*=}"
         shift 1
+        ;;
+      --checks)
+        checks="1"
+        shift 1
+        ;;
+      -h|--help)
+        usage
+        exit 0
         ;;
       *)
         usage
@@ -47,7 +56,7 @@ parse_args() {
     exit 1
   fi
 
-  echo "$date"
+  echo "$date|$checks"
 }
 
 psql_value() {
@@ -78,17 +87,18 @@ psql_value() {
 }
 
 run_validations() {
+  local date="$1"
   local n_curated
   local n_distinct
   local n_dup
   local pct_com_mun
   local n_marts
 
-  n_curated="$(psql_value "select count(*) from curated.inpe_focos_enriched;")"
-  n_distinct="$(psql_value "select count(distinct event_hash) from curated.inpe_focos_enriched;")"
-  n_dup="$(psql_value "select count(*) - count(distinct event_hash) from curated.inpe_focos_enriched;")"
-  pct_com_mun="$(psql_value "select round(100.0 * count(*) filter (where mun_cd_mun is not null) / nullif(count(*), 0), 2) from curated.inpe_focos_enriched;")"
-  n_marts="$(psql_value "select coalesce(sum(n_focos), 0) from marts.focos_diario_municipio;")"
+  n_curated="$(psql_value "select count(*) from curated.inpe_focos_enriched where file_date = '${date}'::date;")"
+  n_distinct="$(psql_value "select count(distinct event_hash) from curated.inpe_focos_enriched where file_date = '${date}'::date;")"
+  n_dup="$(psql_value "select count(*) - count(distinct event_hash) from curated.inpe_focos_enriched where file_date = '${date}'::date;")"
+  pct_com_mun="$(psql_value "select round(100.0 * count(*) filter (where mun_cd_mun is not null) / nullif(count(*), 0), 2) from curated.inpe_focos_enriched where file_date = '${date}'::date;")"
+  n_marts="$(psql_value "select coalesce(sum(n_focos), 0) from marts.focos_diario_municipio where day = '${date}'::date;")"
 
   log "validation | curated=$n_curated distinct=$n_distinct dup=$n_dup pct_com_mun=$pct_com_mun"
   log "validation | n_marts=$n_marts n_base=$n_curated"
@@ -105,8 +115,13 @@ run_validations() {
 }
 
 main() {
+  local parsed
   local date
-  date="$(parse_args "$@")"
+  local run_checks
+
+  parsed="$(parse_args "$@")"
+  date="${parsed%%|*}"
+  run_checks="${parsed##*|}"
 
   load_env
 
@@ -115,10 +130,16 @@ main() {
 
   bash "$script_dir/run_ref.sh"
   python -m uv run python -m etl.cli --date "$date"
-  bash "$script_dir/run_enrich.sh"
-  bash "$script_dir/run_marts.sh"
+  bash "$script_dir/run_enrich.sh" --date "$date"
+  bash "$script_dir/run_marts.sh" --date "$date"
 
-  run_validations
+  run_validations "$date"
+
+  if [ "$run_checks" -eq 1 ]; then
+    log "run checks"
+    bash "$script_dir/checks.sh" --date "$date"
+  fi
+
   log "done"
 }
 

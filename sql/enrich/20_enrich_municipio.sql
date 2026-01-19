@@ -1,4 +1,4 @@
-﻿-- enrich curated records with municipality data
+-- enrich curated records with municipality data
 create schema if not exists curated;
 
 create table if not exists curated.inpe_focos_enriched (
@@ -37,7 +37,8 @@ select
   f.lat, f.lon, f.geom
 from curated.inpe_focos f
 left join curated.inpe_focos_enriched e on e.event_hash = f.event_hash
-where e.event_hash is null;
+where e.event_hash is null
+  and f.file_date = :'DATE'::date;
 
 update curated.inpe_focos_enriched f
 set
@@ -47,6 +48,7 @@ set
   mun_area_km2 = m.area_km2
 from ref.ibge_municipios m
 where f.mun_cd_mun is null
+  and f.file_date = :'DATE'::date
   and f.geom is not null
   and st_intersects(f.geom, m.geom);
 
@@ -58,6 +60,7 @@ set
   mun_area_km2 = m.area_km2
 from ref.ibge_municipios m
 where f.mun_cd_mun is null
+  and f.file_date = :'DATE'::date
   and f.geom is not null
   and m.cd_mun = (
     select m2.cd_mun

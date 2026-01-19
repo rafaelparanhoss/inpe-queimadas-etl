@@ -1,8 +1,24 @@
 create schema if not exists marts;
 
-drop table if exists marts.focos_diario_uf_trend;
+do $$
+declare
+  obj_kind char;
+begin
+  select c.relkind
+  into obj_kind
+  from pg_class c
+  join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'marts'
+    and c.relname = 'focos_diario_uf_trend';
 
-create table marts.focos_diario_uf_trend as
+  if obj_kind = 'v' then
+    execute 'drop view marts.focos_diario_uf_trend';
+  elsif obj_kind is not null then
+    execute 'drop table marts.focos_diario_uf_trend';
+  end if;
+end $$;
+
+create or replace view marts.focos_diario_uf_trend as
 select
   d.day,
   d.uf,
@@ -19,6 +35,3 @@ select
     2
   ) as ma30_n_focos
 from marts.focos_diario_uf d;
-
-create index if not exists idx_marts_focos_diario_uf_trend_uf_day
-  on marts.focos_diario_uf_trend (uf, day);
