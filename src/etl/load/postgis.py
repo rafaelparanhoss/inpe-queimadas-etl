@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import Iterable
@@ -13,6 +14,13 @@ from ..transform.inpe_focos_diario import Record
 
 _filename = Path(__file__).stem
 log = logging.getLogger(_filename)
+
+
+@dataclass(frozen=True)
+class LoadResult:
+    inserted: int
+    attempted: int
+
 
 # schema and indexes for raw and curated tables
 DDL = """
@@ -118,13 +126,13 @@ def _chunks(rows: list[dict], size: int) -> Iterable[list[dict]]:
         yield rows[i : i + size]
 
 
-def _count_by_file_date(conn: psycopg.Connection, file_dates: list[date]) -> dict[date, int]:
+def _count_raw_by_file_date(conn: psycopg.Connection, file_dates: list[date]) -> dict[date, int]:
     if not file_dates:
         return {}
 
     sql = """
     select file_date, count(*)::int as n
-    from curated.inpe_focos
+    from raw.inpe_focos
     where file_date = any(%s)
     group by file_date
     """
@@ -142,14 +150,15 @@ def load_records(
     records: Iterable[Record],
     source: str = "inpe_diario_brasil",
     chunk_size: int = 5000,
-) -> int:
+) -> LoadResult:
     t0 = time.perf_counter()
 
     rec_list = list(records)
-    log.info("load start | records=%s | source=%s | chunk_size=%s", len(rec_list), source, chunk_size)
+    attempted = len(rec_list)
+    log.info("load start | records=%s | source=%s | chunk_size=%s", attempted, source, chunk_size)
     if not rec_list:
         log.warning("load skip | empty records")
-        return 0
+        return LoadResult(inserted=0, attempted=0)
 
     ensure_db()
 
@@ -177,8 +186,8 @@ def load_records(
     inserted_total = 0
     try:
         with psycopg.connect(_conn_str()) as conn:
-            before = _count_by_file_date(conn, file_dates)
-            log.debug("curated counts (before) | %s", {d.isoformat(): n for d, n in before.items()})
+            raw_before = _count_raw_by_file_date(conn, file_dates)
+            log.info("raw counts (before) | %s", {d.isoformat(): n for d, n in raw_before.items()})
 
             with conn.cursor() as cur:
                 for idx, chunk in enumerate(_chunks(rows, chunk_size), start=1):
@@ -192,10 +201,10 @@ def load_records(
 
             conn.commit()
 
-            after = _count_by_file_date(conn, file_dates)
-            log.debug("curated counts (after) | %s", {d.isoformat(): n for d, n in after.items()})
+            raw_after = _count_raw_by_file_date(conn, file_dates)
+            log.info("raw counts (after) | %s", {d.isoformat(): n for d, n in raw_after.items()})
 
-            inserted_total = sum(after[d] - before.get(d, 0) for d in file_dates)
+            inserted_total = sum(raw_after[d] - raw_before.get(d, 0) for d in file_dates)
 
     except Exception:
         log.exception("load failed")
@@ -204,7 +213,7 @@ def load_records(
     log.info(
         "load done | inserted=%s | attempted=%s | dt=%.2fs",
         inserted_total,
-        len(rows),
+        attempted,
         time.perf_counter() - t0,
     )
-    return inserted_total
+    return LoadResult(inserted=inserted_total, attempted=attempted)

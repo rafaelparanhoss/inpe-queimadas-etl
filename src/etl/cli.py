@@ -76,10 +76,15 @@ def run(date_str: str) -> None:
 
     # load into the database
     t_load = time.perf_counter()
-    attempted = load_records(records)
+    load_result = load_records(records)
     dt_load = time.perf_counter() - t_load
 
-    log.info("load ok | dt=%.2fs | rows_attempted=%s", dt_load, attempted)
+    log.info(
+        "load ok | dt=%.2fs | rows_inserted=%s | rows_attempted=%s",
+        dt_load,
+        load_result.inserted,
+        load_result.attempted,
+    )
     log.info("etl done | total_dt=%.2fs", time.perf_counter() - t0)
 
     print(f"Downloaded: {ex.url}")
