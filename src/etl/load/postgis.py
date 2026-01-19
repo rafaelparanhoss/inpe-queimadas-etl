@@ -8,8 +8,8 @@ from typing import Iterable
 
 import psycopg
 
-from .config import settings
-from .transform import Record
+from ..config import settings
+from ..transform.inpe_focos_diario import Record
 
 _filename = Path(__file__).stem
 log = logging.getLogger(_filename)
@@ -143,7 +143,6 @@ def load_records(
     source: str = "inpe_diario_brasil",
     chunk_size: int = 5000,
 ) -> int:
-    # insert records into raw and curated tables in chunks
     t0 = time.perf_counter()
 
     rec_list = list(records)

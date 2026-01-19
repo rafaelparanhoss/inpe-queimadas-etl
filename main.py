@@ -1,4 +1,5 @@
-from etl.runner import main
+# thin entrypoint for the etl cli
+from etl.cli import main
 
 
 if __name__ == "__main__":

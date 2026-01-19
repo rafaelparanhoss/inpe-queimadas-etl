@@ -84,19 +84,11 @@ def transform_inpe_csv(path: str, file_date: date) -> list[Record]:
 
     log.info("transform start | file_date=%s | path=%s", file_date.isoformat(), p.as_posix())
     try:
-        log.debug("input file | exists=%s | size_bytes=%s", p.exists(), p.stat().st_size if p.exists() else None)
-    except Exception:
-        log.debug("input file | exists=%s | size_bytes=unknown", p.exists())
-
-    try:
         df = pd.read_csv(p, sep=None, engine="python", dtype=str)
     except Exception:
         log.exception("read_csv failed | path=%s", p.as_posix())
         raise
-
-    log.debug("read_csv ok | rows=%s | cols=%s", len(df), len(df.columns))
     df = _norm_cols(df)
-    log.debug("columns (norm) | %s", list(df.columns)[:60])
 
     lat_col = _find_col(df, preferred=["lat", "latitude"], contains=["lat"])
     lon_col = _find_col(df, preferred=["lon", "long", "longitude"], contains=["lon", "long"])
@@ -152,7 +144,6 @@ def transform_inpe_csv(path: str, file_date: date) -> list[Record]:
     json_fallback = 0
 
     for i, row_raw in enumerate(df.to_dict(orient="records")):
-        # pandas types keys as hashable; force str to avoid type checker noise
         row = {str(k): v for k, v in row_raw.items()}
         props: dict[str, Any] = {k: _clean_value(v) for k, v in row.items()}
 
@@ -199,20 +190,7 @@ def transform_inpe_csv(path: str, file_date: date) -> list[Record]:
             )
         )
 
-        if i == 0:
-            log.debug(
-                "sample record | event_hash=%s | lat=%.6f | lon=%.6f | view_ts=%s | satelite=%s",
-                event_hash,
-                lat,
-                lon,
-                view_ts,
-                sat,
-            )
 
     log.info("transform done | records=%s | dup_in_file=%s | json_fallback=%s", len(recs), dup_count, json_fallback)
-
-    if recs:
-        sats = sorted({(r.satelite or "").strip() for r in recs if r.satelite})
-        log.debug("summary | unique_satelites=%s", sats[:30])
 
     return recs
