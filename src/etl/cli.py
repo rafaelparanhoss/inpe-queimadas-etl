@@ -97,3 +97,7 @@ def main(argv: list[str] | None = None) -> None:
     # main entrypoint
     args = _parse_args(argv)
     run(args.date)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,4 +1,4 @@
-# INPE Queimadas - ETL diário (Brasil) -> PostGIS
+﻿# INPE Queimadas - ETL diário (Brasil) -> PostGIS
 
 ETL geoespacial para ingestão diária de focos de queimadas (INPE, CSV público) e carga em PostGIS, com camadas `raw/curated` para auditoria e análise.
 
@@ -22,10 +22,17 @@ Python 3.11 | pandas | requests | psycopg | PostGIS | Docker | uv
 Tabelas:
 - `raw.inpe_focos`
 - `curated.inpe_focos`
+- `curated.inpe_focos_enriched`
 
 Índices:
 - GiST em `geom`
 - B-tree em `file_date`
+
+## Estrutura do projeto
+- `sql/ref`: schemas e tabelas de referência
+- `sql/enrich`: enriquecimento espacial
+- `sql/marts`: tabelas analíticas
+- `scripts`: automações de execução
 
 ## Como rodar
 
@@ -40,23 +47,23 @@ python -m uv sync
 python -m uv pip install -e .
 ```
 
-### 3) Rodar a ETL (um dia)
+### 3) Rodar tudo (ref → ingestão INPE → enrich → marts)
 ```bash
-python -m uv run python main.py --date 2026-01-16
+scripts/run_all.sh --date 2026-01-18
 ```
 
-### 4) Verificar no banco
+### 4) Rodar etapas isoladas
 ```bash
-docker exec -it geoetl_postgis psql -U geoetl -d geoetl -c "select count(*) from curated.inpe_focos;"
+scripts/run_ref.sh
+scripts/run_enrich.sh
+scripts/run_marts.sh
 ```
 
-### 5) Query espacial (exemplo)
+### 5) Exemplo de validações
 ```bash
-docker exec -it geoetl_postgis psql -U geoetl -d geoetl -c "
-select count(*)
-from curated.inpe_focos
-where geom && ST_MakeEnvelope(-55, -34, -48, -27, 4326);
-"
+docker exec -it geoetl_postgis psql -U geoetl -d geoetl -c "select count(*) from curated.inpe_focos_enriched;"
+
+docker exec -it geoetl_postgis psql -U geoetl -d geoetl -c "select count(*) - count(distinct event_hash) from curated.inpe_focos_enriched;"
 ```
 
 ## Logs
@@ -64,6 +71,7 @@ Arquivo gerado em `data/logs/etl.log`.
 
 ## Configuração
 Arquivo `.env` (não versionado). Use `.env.example` como referência.
+Para scripts, use `.env.local` (ver `.env.local.example`).
 
 ## Roadmap
 - [ ] Rodar intervalo de datas (`--start-date/--end-date` ou `--backfill`)
