@@ -47,39 +47,44 @@ python -m uv sync
 python -m uv pip install -e .
 ```
 
-### 3) Rodar tudo (ref → ingestão INPE → enrich → marts)
+### 3) Rodar tudo (ref -> ingestao INPE -> enrich -> marts)
 ```bash
 scripts/run_all.sh --date 2026-01-18
+scripts/run_all.sh --date 2026-01-18 --checks
 ```
 
 ### 4) Rodar etapas isoladas
 ```bash
 scripts/run_ref.sh
-scripts/run_enrich.sh
-scripts/run_marts.sh
+scripts/run_enrich.sh --date 2026-01-18
+scripts/run_marts.sh --date 2026-01-18
 ```
 
-### 5) Exemplo de validações
+### 5) Rebuild total (marts)
+```bash
+scripts/rebuild_marts.sh
+```
+
+### 6) Exemplo de validacoes
 ```bash
 docker exec -it geoetl_postgis psql -U geoetl -d geoetl -c "select count(*) from curated.inpe_focos_enriched;"
 
 docker exec -it geoetl_postgis psql -U geoetl -d geoetl -c "select count(*) - count(distinct event_hash) from curated.inpe_focos_enriched;"
 ```
 
-
-### 6) Reprocessar um dia
+### 7) Reprocessar um dia
 ```bash
 scripts/reprocess_day.sh --date 2026-01-18
 scripts/reprocess_day.sh --date 2026-01-18 --dry-run
 ```
 
-### 7) Smoke checks
+### 8) Smoke checks
 ```bash
 scripts/checks.sh
 scripts/checks.sh --date 2026-01-18
 ```
 
-### 8) OK esperado (reprocess)
+### 9) OK esperado (reprocess)
 raw_n=curated_n e marts_day_sum=curated_n
 
 ## Logs
