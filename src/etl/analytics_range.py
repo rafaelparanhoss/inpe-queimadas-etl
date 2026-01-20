@@ -9,7 +9,9 @@ import psycopg
 from .config import settings
 
 
-def _log(message: str) -> None:
+def _log(message: str, *args: object) -> None:
+    if args:
+        message = message % args
     print(f"[analytics_range] {message}")
 
 
@@ -139,7 +141,7 @@ def run_analytics_range(
             from marts.focos_diario_municipio
             where day between %s::date and %s::date
             group by mun_cd_mun, mun_nm_mun, mun_uf
-            order by n_focos_total desc
+            order by n_focos_total desc, focos_por_100km2 desc nulls last, mun_cd_mun asc
             limit %s;
             """,
             (start, end, top_n),
@@ -177,7 +179,7 @@ def run_analytics_range(
               end as delta_pct
             from q1
             full join q4 on q4.uf = q1.uf
-            order by {shifts_sort_key} desc, uf
+            order by {shifts_sort_key} desc nulls last, uf
             limit %s;
             """
 
