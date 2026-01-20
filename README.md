@@ -17,6 +17,8 @@ Python 3.11 | pandas | requests | psycopg | PostGIS | Docker | uv
   - `ON CONFLICT DO NOTHING`.
 - **SRID 4326**
   - a fonte já vem em lat/lon (WGS84).
+- **Fallback mensal para historico**
+  - para datas antigas (default 45 dias), usa o CSV mensal e filtra o dia.
 
 ## Banco
 Tabelas:
@@ -126,6 +128,9 @@ Arquivo gerado em `data/logs/etl.log`.
 ## Configuração
 Arquivo `.env` (não versionado). Use `.env.example` como referência.
 Para scripts, use `.env.local` (ver `.env.local.example`).
+Env vars extras:
+- `INPE_MONTHLY_BASE_URL`
+- `INPE_RETENTION_DAYS`
 
 ## Roadmap
 - [ ] Rodar intervalo de datas (`--start-date/--end-date` ou `--backfill`)
