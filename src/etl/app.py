@@ -239,7 +239,7 @@ def _build_parser() -> argparse.ArgumentParser:
     make_figures.add_argument("--start", help="start date in YYYY-MM-DD", required=True)
     make_figures.add_argument("--end", help="end date in YYYY-MM-DD", required=True)
     make_figures.add_argument("--out", help="output directory", required=False)
-    make_figures.add_argument("--fig-top-n", help="top N for hotspots figures", type=int, default=25)
+    make_figures.add_argument("--fig-top-n", help="top N for hotspots figures", type=int, default=20)
     make_figures.add_argument("--dpi", help="output dpi", type=int, default=200)
     make_figures.add_argument("--smooth-days", help="rolling mean days", type=int, default=7)
 

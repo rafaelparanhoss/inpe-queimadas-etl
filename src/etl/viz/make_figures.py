@@ -305,7 +305,7 @@ def run_make_figures(
     start_str: str,
     end_str: str,
     out_dir: str | None,
-    fig_top_n: int = 25,
+    fig_top_n: int = 20,
     dpi: int = 200,
     smooth_days: int = 7,
 ) -> None:
