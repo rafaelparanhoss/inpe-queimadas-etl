@@ -22,7 +22,6 @@ from .reprocess import run_reprocess
 from .report import run_report
 from .report_range import run_report_range
 from .today import run_today
-from .viz.make_figures import run_make_figures
 
 try:
     from zoneinfo import ZoneInfo
@@ -183,6 +182,8 @@ def cmd_analytics_range(
 
 
 def cmd_make_figures(start_str: str, end_str: str, out_dir: str | None) -> None:
+    from .viz.make_figures import run_make_figures
+
     run_make_figures(_validate_date(start_str), _validate_date(end_str), out_dir)
 
 

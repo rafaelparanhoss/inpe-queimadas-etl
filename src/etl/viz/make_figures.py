@@ -4,8 +4,6 @@ import csv
 import datetime as dt
 from pathlib import Path
 
-import matplotlib.pyplot as plt
-
 from ..config import settings
 
 
@@ -35,7 +33,17 @@ def _to_float(value: str) -> float:
     return float(value) if value else 0.0
 
 
-def _plot_quality(quality_rows: list[dict[str, str]], out_path: Path) -> None:
+def _get_pyplot():
+    try:
+        import matplotlib.pyplot as plt
+    except Exception as exc:
+        raise RuntimeError(
+            "matplotlib is required for make-figures; install with `uv pip install matplotlib`"
+        ) from exc
+    return plt
+
+
+def _plot_quality(plt, quality_rows: list[dict[str, str]], out_path: Path) -> None:
     days = [_parse_date(row["day"]) for row in quality_rows]
     pct = [_to_float(row["pct_com_mun"]) for row in quality_rows]
     missing = [_to_int(row["missing_mun"]) for row in quality_rows]
@@ -56,7 +64,7 @@ def _plot_quality(quality_rows: list[dict[str, str]], out_path: Path) -> None:
     plt.close(fig)
 
 
-def _plot_total_vs_com(br_rows: list[dict[str, str]], out_path: Path) -> None:
+def _plot_total_vs_com(plt, br_rows: list[dict[str, str]], out_path: Path) -> None:
     days = [_parse_date(row["day"]) for row in br_rows]
     total = [_to_int(row["n_focos_total"]) for row in br_rows]
     com_mun = [_to_int(row["n_focos_com_mun"]) for row in br_rows]
@@ -73,7 +81,7 @@ def _plot_total_vs_com(br_rows: list[dict[str, str]], out_path: Path) -> None:
     plt.close(fig)
 
 
-def _plot_seasonality(uf_rows: list[dict[str, str]], out_path: Path) -> None:
+def _plot_seasonality(plt, uf_rows: list[dict[str, str]], out_path: Path) -> None:
     totals: dict[str, int] = {}
     monthly: dict[str, dict[dt.date, int]] = {}
 
@@ -101,7 +109,7 @@ def _plot_seasonality(uf_rows: list[dict[str, str]], out_path: Path) -> None:
     plt.close(fig)
 
 
-def _plot_hotspots(hotspot_rows: list[dict[str, str]], out_path: Path) -> None:
+def _plot_hotspots(plt, hotspot_rows: list[dict[str, str]], out_path: Path) -> None:
     def sort_key(row: dict[str, str]) -> tuple:
         return (
             -_to_int(row["n_focos_total"]),
@@ -123,7 +131,7 @@ def _plot_hotspots(hotspot_rows: list[dict[str, str]], out_path: Path) -> None:
     plt.close(fig)
 
 
-def _plot_shifts(shift_rows: list[dict[str, str]], out_path: Path) -> None:
+def _plot_shifts(plt, shift_rows: list[dict[str, str]], out_path: Path) -> None:
     labels = [row["uf"] for row in shift_rows]
     values = [_to_int(row["delta_abs"]) for row in shift_rows]
 
@@ -154,16 +162,17 @@ def run_make_figures(start_str: str, end_str: str, out_dir: str | None) -> None:
         figures_dir.as_posix(),
     )
 
+    plt = _get_pyplot()
     quality_rows = _read_csv(analytics_dir / "quality_daily.csv")
     seasonality_rows = _read_csv(analytics_dir / "seasonality_uf.csv")
     hotspots_rows = _read_csv(analytics_dir / "hotspots_mun_period.csv")
     shifts_rows = _read_csv(analytics_dir / "top_shifts_uf.csv")
     br_rows = _read_csv(range_dir / "br_daily.csv")
 
-    _plot_quality(quality_rows, figures_dir / "quality_pct_missing.png")
-    _plot_total_vs_com(br_rows, figures_dir / "total_vs_com_mun.png")
-    _plot_seasonality(seasonality_rows, figures_dir / "seasonality_uf_top10.png")
-    _plot_hotspots(hotspots_rows, figures_dir / "hotspots_topn.png")
-    _plot_shifts(shifts_rows, figures_dir / "shifts_topn.png")
+    _plot_quality(plt, quality_rows, figures_dir / "quality_pct_missing.png")
+    _plot_total_vs_com(plt, br_rows, figures_dir / "total_vs_com_mun.png")
+    _plot_seasonality(plt, seasonality_rows, figures_dir / "seasonality_uf_top10.png")
+    _plot_hotspots(plt, hotspots_rows, figures_dir / "hotspots_topn.png")
+    _plot_shifts(plt, shifts_rows, figures_dir / "shifts_topn.png")
 
     _log("done")
