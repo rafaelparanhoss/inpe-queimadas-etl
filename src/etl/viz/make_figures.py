@@ -43,42 +43,80 @@ def _get_pyplot():
     return plt
 
 
-def _plot_quality(plt, quality_rows: list[dict[str, str]], out_path: Path) -> None:
-    days = [_parse_date(row["day"]) for row in quality_rows]
-    pct = [_to_float(row["pct_com_mun"]) for row in quality_rows]
-    missing = [_to_int(row["missing_mun"]) for row in quality_rows]
+def _rolling_mean(values: list[float], window: int) -> list[float]:
+    if window <= 1:
+        return values[:]
+    out: list[float] = []
+    acc = 0.0
+    for idx, value in enumerate(values):
+        acc += value
+        if idx >= window:
+            acc -= values[idx - window]
+        denom = min(idx + 1, window)
+        out.append(acc / denom)
+    return out
 
-    fig, axes = plt.subplots(2, 1, figsize=(12, 6), sharex=True)
-    axes[0].plot(days, pct, color="#1f77b4", linewidth=1.5)
-    axes[0].set_ylabel("pct_com_mun")
-    min_pct = min(pct) if pct else 0
-    axes[0].set_ylim(max(0, min_pct - 1), 100)
 
-    axes[1].bar(days, missing, color="#d62728", width=0.8)
-    axes[1].set_ylabel("missing_mun")
-    axes[1].set_xlabel("day")
-
-    fig.autofmt_xdate()
+def _save_fig(plt, fig, out_path: Path, dpi: int) -> None:
     fig.tight_layout()
-    fig.savefig(out_path, dpi=150)
+    fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
     plt.close(fig)
 
 
-def _plot_total_vs_com(plt, br_rows: list[dict[str, str]], out_path: Path) -> None:
+def _plot_quality(plt, quality_rows: list[dict[str, str]], out_path: Path, dpi: int) -> None:
+    days = [_parse_date(row["day"]) for row in quality_rows]
+    pct_com = [_to_float(row["pct_com_mun"]) for row in quality_rows]
+    pct_missing = [max(0.0, 100.0 - value) for value in pct_com]
+    missing = [_to_int(row["missing_mun"]) for row in quality_rows]
+    max_pct_missing = max(pct_missing) if pct_missing else 0.0
+
+    fig, ax_pct = plt.subplots(figsize=(12, 4))
+    ax_miss = ax_pct.twinx()
+
+    ax_pct.plot(days, pct_missing, color="#1f77b4", linewidth=1.5, label="pct_missing")
+    ax_miss.bar(days, missing, color="#d62728", alpha=0.35, label="missing_mun")
+
+    miss_days = [day for day, value in zip(days, missing) if value > 0]
+    miss_values = [value for value in missing if value > 0]
+    if miss_days:
+        ax_miss.scatter(miss_days, miss_values, color="#d62728", s=18, zorder=3)
+
+    ax_pct.set_ylabel("pct_missing")
+    ax_miss.set_ylabel("missing_mun")
+    ax_pct.set_xlabel("day")
+
+    if max_pct_missing <= 0.5:
+        ax_pct.set_ylim(0, 0.5)
+    else:
+        ax_pct.set_ylim(0, max_pct_missing * 1.1)
+
+    fig.autofmt_xdate()
+    _save_fig(plt, fig, out_path, dpi)
+
+
+def _plot_total_vs_com(
+    plt,
+    br_rows: list[dict[str, str]],
+    out_path: Path,
+    smooth_days: int,
+    dpi: int,
+) -> None:
     days = [_parse_date(row["day"]) for row in br_rows]
     total = [_to_int(row["n_focos_total"]) for row in br_rows]
     com_mun = [_to_int(row["n_focos_com_mun"]) for row in br_rows]
+    total_smooth = _rolling_mean([float(value) for value in total], smooth_days)
+    com_smooth = _rolling_mean([float(value) for value in com_mun], smooth_days)
 
     fig, ax = plt.subplots(figsize=(12, 4))
-    ax.plot(days, total, color="#1f77b4", linewidth=1.2, label="total")
-    ax.plot(days, com_mun, color="#2ca02c", linewidth=1.2, label="com_mun")
+    ax.plot(days, total, color="#1f77b4", linewidth=0.8, alpha=0.3, label="total_daily")
+    ax.plot(days, com_mun, color="#2ca02c", linewidth=0.8, alpha=0.3, label="com_mun_daily")
+    ax.plot(days, total_smooth, color="#1f77b4", linewidth=1.8, label=f"total_{smooth_days}d")
+    ax.plot(days, com_smooth, color="#2ca02c", linewidth=1.8, label=f"com_mun_{smooth_days}d")
     ax.set_ylabel("n_focos")
     ax.set_xlabel("day")
-    ax.legend()
+    ax.legend(ncol=2, fontsize=8)
     fig.autofmt_xdate()
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=150)
-    plt.close(fig)
+    _save_fig(plt, fig, out_path, dpi)
 
 
 def _plot_seasonality(plt, uf_rows: list[dict[str, str]], out_path: Path) -> None:
@@ -155,11 +193,15 @@ def run_make_figures(start_str: str, end_str: str, out_dir: str | None) -> None:
         figures_dir = Path(settings.data_dir) / "figures" / f"{start_str}_{end_str}"
     figures_dir.mkdir(parents=True, exist_ok=True)
 
+    smooth_days = 7
+    dpi = 200
     _log(
-        "analytics_dir=%s | range_dir=%s | out_dir=%s",
+        "analytics_dir=%s | range_dir=%s | out_dir=%s | smooth_days=%s | dpi=%s",
         analytics_dir.as_posix(),
         range_dir.as_posix(),
         figures_dir.as_posix(),
+        smooth_days,
+        dpi,
     )
 
     plt = _get_pyplot()
@@ -169,8 +211,8 @@ def run_make_figures(start_str: str, end_str: str, out_dir: str | None) -> None:
     shifts_rows = _read_csv(analytics_dir / "top_shifts_uf.csv")
     br_rows = _read_csv(range_dir / "br_daily.csv")
 
-    _plot_quality(plt, quality_rows, figures_dir / "quality_pct_missing.png")
-    _plot_total_vs_com(plt, br_rows, figures_dir / "total_vs_com_mun.png")
+    _plot_quality(plt, quality_rows, figures_dir / "quality_pct_missing.png", dpi)
+    _plot_total_vs_com(plt, br_rows, figures_dir / "total_vs_com_mun.png", smooth_days, dpi)
     _plot_seasonality(plt, seasonality_rows, figures_dir / "seasonality_uf_top10.png")
     _plot_hotspots(plt, hotspots_rows, figures_dir / "hotspots_topn.png")
     _plot_shifts(plt, shifts_rows, figures_dir / "shifts_topn.png")
