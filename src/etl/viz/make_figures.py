@@ -247,26 +247,26 @@ def _plot_hotspots(
         labels = []
         for row in rows:
             label = f"{row['mun_nm_mun']} ({row['mun_uf']})"
-            labels.append(_truncate_label(label, 32))
+            labels.append(_truncate_label(label, 30))
         return labels
 
     labels_count = build_labels(rows_count)
     values_count = [_to_int(row["n_focos_total"]) for row in rows_count]
 
-    fig_height = max(4.0, 0.25 * len(rows_count))
-    fig, ax = plt.subplots(figsize=(10, fig_height))
+    fig, ax = plt.subplots(figsize=(10, 7))
     ax.barh(labels_count[::-1], values_count[::-1], color="#1f77b4")
+    ax.set_title(f"Hotspots por contagem (top {top_n})")
     ax.set_xlabel("n_focos_total")
-    ax.set_ylabel("municipio")
+    ax.set_ylabel("Municipio (UF)")
     _save_fig(plt, fig, out_path_count, dpi)
 
     labels_density = build_labels(rows_density)
     values_density = [_to_float(row["focos_por_100km2"]) for row in rows_density]
-    fig_height = max(4.0, 0.25 * len(rows_density))
-    fig, ax = plt.subplots(figsize=(10, fig_height))
+    fig, ax = plt.subplots(figsize=(10, 7))
     ax.barh(labels_density[::-1], values_density[::-1], color="#9467bd")
+    ax.set_title(f"Hotspots por densidade (top {top_n})")
     ax.set_xlabel("focos_por_100km2")
-    ax.set_ylabel("municipio")
+    ax.set_ylabel("Municipio (UF)")
     _save_fig(plt, fig, out_path_density, dpi)
 
 
@@ -276,7 +276,12 @@ def _plot_shifts(
     out_path: Path,
     shifts_top_n: int,
     dpi: int,
+    start_str: str,
+    end_str: str,
+    window_days: int,
 ) -> None:
+    from matplotlib import ticker as mticker
+
     top_k = min(shifts_top_n, len(shift_rows))
     rows = sorted(
         shift_rows,
@@ -286,12 +291,13 @@ def _plot_shifts(
     labels = [row["uf"] for row in rows]
     values = [_to_int(row["delta_abs"]) for row in rows]
 
-    fig_height = max(3.5, 0.3 * len(rows))
-    fig, ax = plt.subplots(figsize=(10, fig_height))
+    fig, ax = plt.subplots(figsize=(10, 7))
     ax.barh(labels[::-1], values[::-1], color="#ff7f0e")
     ax.axvline(0, color="#333333", linewidth=0.8)
-    ax.set_xlabel("delta_abs")
+    ax.set_title(f"Variacao por UF (Q1 vs Q4, {window_days}d) ({start_str} a {end_str})")
+    ax.set_xlabel("Delta absoluto (Q4 - Q1)")
     ax.set_ylabel("uf")
+    ax.xaxis.set_major_formatter(mticker.StrMethodFormatter("{x:,.0f}"))
     _save_fig(plt, fig, out_path, dpi)
 
 
@@ -313,6 +319,10 @@ def run_make_figures(
         figures_dir = Path(settings.data_dir) / "figures" / f"{start_str}_{end_str}"
     figures_dir.mkdir(parents=True, exist_ok=True)
 
+    legacy_hotspots = figures_dir / "hotspots_topn.png"
+    if legacy_hotspots.exists():
+        legacy_hotspots.unlink()
+
     shifts_top_n = 15
     _log(
         "analytics_dir=%s | range_dir=%s | out_dir=%s | smooth_days=%s | dpi=%s | fig_top_n=%s | shifts_top_n=%s",
@@ -327,6 +337,7 @@ def run_make_figures(
 
     plt = _get_pyplot()
     _apply_style(plt, dpi)
+    window_days = min(90, (_parse_date(end_str) - _parse_date(start_str)).days + 1)
     quality_rows = _read_csv(analytics_dir / "quality_daily.csv")
     seasonality_rows = _read_csv(analytics_dir / "seasonality_uf.csv")
     hotspots_rows = _read_csv(analytics_dir / "hotspots_mun_period.csv")
@@ -364,6 +375,15 @@ def run_make_figures(
         fig_top_n,
         dpi,
     )
-    _plot_shifts(plt, shifts_rows, figures_dir / "shifts_topn.png", shifts_top_n, dpi)
+    _plot_shifts(
+        plt,
+        shifts_rows,
+        figures_dir / "shifts_topn.png",
+        shifts_top_n,
+        dpi,
+        start_str,
+        end_str,
+        window_days,
+    )
 
     _log("done")
