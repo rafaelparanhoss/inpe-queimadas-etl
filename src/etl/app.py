@@ -12,6 +12,8 @@ from pathlib import Path
 
 from .config import settings
 from .checks import run_checks
+from .enrich_runner import run_enrich
+from .marts_runner import run_marts
 from .ref_runner import run_ref
 from .reprocess import run_reprocess
 from .report import run_report
@@ -147,6 +149,12 @@ def _build_parser() -> argparse.ArgumentParser:
     checks = sub.add_parser("checks", help="run checks")
     checks.add_argument("--date", help="date in YYYY-MM-DD", required=False)
 
+    enrich = sub.add_parser("enrich", help="run enrich sql for a date")
+    enrich.add_argument("--date", help="date in YYYY-MM-DD", required=True)
+
+    marts = sub.add_parser("marts", help="run marts sql for a date")
+    marts.add_argument("--date", help="date in YYYY-MM-DD", required=True)
+
     report = sub.add_parser("report", help="generate report for a date")
     report.add_argument("--date", help="date in YYYY-MM-DD", required=True)
 
@@ -176,6 +184,10 @@ def main(argv: list[str] | None = None) -> None:
             run_ref()
         elif args.command == "checks":
             cmd_checks(args.date)
+        elif args.command == "enrich":
+            run_enrich(_validate_date(args.date))
+        elif args.command == "marts":
+            run_marts(_validate_date(args.date))
         elif args.command == "report":
             cmd_report(args.date)
         elif args.command == "reprocess":
