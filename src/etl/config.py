@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     db_password: str = "geoetl"
 
     inpe_base_url: str = "https://dataserver-coids.inpe.br/queimadas/queimadas/focos/csv/diario/Brasil"
+    inpe_monthly_base_url: str = "https://dataserver-coids.inpe.br/queimadas/queimadas/focos/csv/mensal/Brasil"
+    inpe_retention_days: int = 45
     # base directory for data and logs
     data_dir: str = "data"
 
