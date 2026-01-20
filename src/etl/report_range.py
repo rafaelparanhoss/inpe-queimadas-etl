@@ -83,28 +83,25 @@ def run_report_range(start_str: str, end_str: str) -> None:
         br_daily_rows = _fetch_all(
             cur,
             """
-            with area as (
-              select sum(area_km2)::numeric as area_br
-              from ref.ibge_uf_area
-            ),
-            daily as (
+            with base as (
               select
                 coalesce(view_ts::date, file_date) as day,
-                count(*) as n_focos
+                (mun_cd_mun is not null) as has_mun
               from curated.inpe_focos_enriched
               where coalesce(view_ts::date, file_date) between %s::date and %s::date
-              group by 1
             )
             select
-              d.day,
-              d.n_focos,
-              case
-                when a.area_br is null or a.area_br = 0 then null
-                else round((100 * d.n_focos::numeric) / nullif(a.area_br, 0), 4)
-              end as focos_por_100km2
-            from daily d
-            cross join area a
-            order by d.day;
+              day,
+              count(*) as n_focos_total,
+              sum(case when has_mun then 1 else 0 end) as n_focos_com_mun,
+              round(
+                100.0 * sum(case when has_mun then 1 else 0 end) / nullif(count(*), 0),
+                2
+              ) as pct_com_mun,
+              (count(*) - sum(case when has_mun then 1 else 0 end)) as missing_mun
+            from base
+            group by day
+            order by day;
             """,
             (start, end),
         )
@@ -169,7 +166,11 @@ def run_report_range(start_str: str, end_str: str) -> None:
     summary_path.write_text(summary_text, encoding="utf-8")
     print(summary_text, end="")
 
-    _write_csv(br_daily_csv, ["day", "n_focos", "focos_por_100km2"], br_daily_rows)
+    _write_csv(
+        br_daily_csv,
+        ["day", "n_focos_total", "n_focos_com_mun", "pct_com_mun", "missing_mun"],
+        br_daily_rows,
+    )
     _write_csv(uf_daily_csv, ["day", "uf", "n_focos", "focos_por_100km2"], uf_daily_rows)
     _write_csv(uf_top_csv, ["uf", "n_focos_total", "rank"], uf_top_rows)
     _write_csv(
