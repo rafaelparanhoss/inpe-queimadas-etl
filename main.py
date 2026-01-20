@@ -1,5 +1,5 @@
-# thin entrypoint for the etl cli
-from etl.cli import main
+# thin entrypoint for the etl app cli
+from etl.app import main
 
 
 if __name__ == "__main__":
