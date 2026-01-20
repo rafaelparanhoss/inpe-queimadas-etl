@@ -61,6 +61,21 @@ uv run python -m etl.app today
 ```
 nota report-range: total inclui focos sem municipio; pct_com_mun e missing_mun medem a qualidade do join espacial.
 
+### Analise anual
+```bash
+uv run python -m etl.app report-range --start 2025-01-01 --end 2026-01-20
+```
+Outputs (data/reports/range_<start>_<end>/):
+- summary.txt
+- br_daily.csv
+- uf_daily.csv
+- uf_monthly.csv
+- uf_period.csv
+- uf_top.csv
+- mun_top.csv
+- mun_period.csv
+- mun_monthly_top.csv
+
 ### 3) Rodar tudo (ref -> ingestao INPE -> enrich -> marts)
 ```bash
 scripts/run_all.sh --date 2026-01-18
