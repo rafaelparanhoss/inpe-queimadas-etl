@@ -150,7 +150,11 @@ def _plot_total_vs_com(
     out_path: Path,
     smooth_days: int,
     dpi: int,
+    start_str: str,
+    end_str: str,
 ) -> None:
+    from matplotlib import ticker as mticker
+
     days = [_parse_date(row["day"]) for row in br_rows]
     total = [_to_int(row["n_focos_total"]) for row in br_rows]
     com_mun = [_to_int(row["n_focos_com_mun"]) for row in br_rows]
@@ -162,9 +166,11 @@ def _plot_total_vs_com(
     ax.plot(days, com_mun, color="#2ca02c", linewidth=0.8, alpha=0.3, label="com_mun_daily")
     ax.plot(days, total_smooth, color="#1f77b4", linewidth=1.8, label=f"total_{smooth_days}d")
     ax.plot(days, com_smooth, color="#2ca02c", linewidth=1.8, label=f"com_mun_{smooth_days}d")
+    ax.set_title(f"Total vs com municipio ({start_str} a {end_str})")
     ax.set_ylabel("n_focos")
     ax.set_xlabel("day")
     ax.legend(ncol=2, fontsize=8)
+    ax.yaxis.set_major_formatter(mticker.StrMethodFormatter("{x:,.0f}"))
     fig.autofmt_xdate()
     _save_fig(plt, fig, out_path, dpi)
 
@@ -340,7 +346,15 @@ def run_make_figures(
         n_total,
         missing_total,
     )
-    _plot_total_vs_com(plt, br_rows, figures_dir / "total_vs_com_mun.png", smooth_days, dpi)
+    _plot_total_vs_com(
+        plt,
+        br_rows,
+        figures_dir / "total_vs_com_mun.png",
+        smooth_days,
+        dpi,
+        start_str,
+        end_str,
+    )
     _plot_seasonality(plt, seasonality_rows, figures_dir / "seasonality_uf_top10.png", dpi)
     _plot_hotspots(
         plt,
