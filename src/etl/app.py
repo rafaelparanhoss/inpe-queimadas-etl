@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .config import settings
 from .checks import run_checks
+from .ref_runner import run_ref
 from .reprocess import run_reprocess
 from .report import run_report
 from .today import run_today
@@ -140,6 +141,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="etl command runner")
     sub = parser.add_subparsers(dest="command", required=True)
 
+    ref = sub.add_parser("ref", help="run ref sql and reference data")
+    ref.add_argument("--date", help="date in YYYY-MM-DD", required=False)
+
     checks = sub.add_parser("checks", help="run checks")
     checks.add_argument("--date", help="date in YYYY-MM-DD", required=False)
 
@@ -168,7 +172,9 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     try:
-        if args.command == "checks":
+        if args.command == "ref":
+            run_ref()
+        elif args.command == "checks":
             cmd_checks(args.date)
         elif args.command == "report":
             cmd_report(args.date)
