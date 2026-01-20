@@ -22,6 +22,7 @@ from .reprocess import run_reprocess
 from .report import run_report
 from .report_range import run_report_range
 from .today import run_today
+from .viz.make_figures import run_make_figures
 
 try:
     from zoneinfo import ZoneInfo
@@ -181,6 +182,10 @@ def cmd_analytics_range(
     )
 
 
+def cmd_make_figures(start_str: str, end_str: str, out_dir: str | None) -> None:
+    run_make_figures(_validate_date(start_str), _validate_date(end_str), out_dir)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="etl command runner")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -214,6 +219,11 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=["abs", "pct"],
         default="abs",
     )
+
+    make_figures = sub.add_parser("make-figures", help="generate figures from analytics packs")
+    make_figures.add_argument("--start", help="start date in YYYY-MM-DD", required=True)
+    make_figures.add_argument("--end", help="end date in YYYY-MM-DD", required=True)
+    make_figures.add_argument("--out", help="output directory", required=False)
 
     enrich = sub.add_parser("enrich", help="run enrich sql for a date")
     enrich.add_argument("--date", help="date in YYYY-MM-DD", required=True)
@@ -264,6 +274,8 @@ def main(argv: list[str] | None = None) -> None:
             cmd_checks(args.date)
         elif args.command == "analytics-range":
             cmd_analytics_range(args.start, args.end, args.out, args.top_n, args.shifts_top, args.shifts_sort)
+        elif args.command == "make-figures":
+            cmd_make_figures(args.start, args.end, args.out)
         elif args.command == "enrich":
             run_enrich(_validate_date(args.date))
         elif args.command == "marts":
