@@ -44,6 +44,27 @@ def _psql_scalar(container: str, user: str, database: str, sql: str) -> str:
     return result.stdout.strip()
 
 
+def wait_psql_ready(
+    container: str,
+    user: str,
+    database: str,
+    timeout_sec: int = 60,
+    interval_sec: float = 2.0,
+    stable_successes: int = 2,
+) -> None:
+    deadline = time.time() + timeout_sec
+    successes = 0
+    while successes < stable_successes:
+        try:
+            _psql_scalar(container, user, database, "select 1;")
+            successes += 1
+        except subprocess.CalledProcessError:
+            successes = 0
+            if time.time() >= deadline:
+                raise TimeoutError("psql ready timed out")
+        time.sleep(interval_sec)
+
+
 def ensure_database(timeout_sec: int = 60, interval_sec: float = 2.0) -> None:
     container = os.getenv("DB_CONTAINER", "geoetl_postgis")
     db_user = os.getenv("DB_USER", settings.db_user)
@@ -132,4 +153,11 @@ def ensure_database(timeout_sec: int = 60, interval_sec: float = 2.0) -> None:
         )
         log.info("[db_bootstrap] db created")
 
+    wait_psql_ready(
+        container,
+        db_user,
+        db_name,
+        timeout_sec=timeout_sec,
+        interval_sec=interval_sec,
+    )
     log.info("[db_bootstrap] ready")

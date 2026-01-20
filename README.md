@@ -63,6 +63,13 @@ scripts/run_all.sh --date 2026-01-18
 scripts/run_all.sh --date 2026-01-18 --checks
 ```
 
+### 3.1) Teste manual (race)
+```bash
+docker compose down -v
+docker compose up -d
+python -m uv run python -m etl.app ref
+```
+
 ### 4) Rodar etapas isoladas
 ```bash
 scripts/run_ref.sh
