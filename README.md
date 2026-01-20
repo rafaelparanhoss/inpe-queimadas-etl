@@ -59,6 +59,7 @@ uv run python -m etl.app reprocess --date 2026-01-18
 uv run python -m etl.app checks --date 2026-01-18
 uv run python -m etl.app today
 ```
+nota report-range: total inclui focos sem municipio; pct_com_mun e missing_mun medem a qualidade do join espacial.
 
 ### 3) Rodar tudo (ref -> ingestao INPE -> enrich -> marts)
 ```bash

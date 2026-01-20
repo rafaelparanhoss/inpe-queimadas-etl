@@ -159,6 +159,10 @@ def run_report_range(start_str: str, end_str: str) -> None:
         f"pct_com_mun_min: {pct_min}",
         f"missing_mun_total: {missing_total}",
         "",
+        "notes:",
+        "- total_focos inclui focos sem municipio",
+        "- pct_com_mun e missing_mun medem a qualidade do join espacial",
+        "",
     ]
     summary_text = "\n".join(summary_lines)
 
