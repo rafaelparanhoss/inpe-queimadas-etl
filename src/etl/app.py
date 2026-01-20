@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 from .config import settings
+from .backfill import run_backfill
 from .checks import run_checks
 from .db_bootstrap import ensure_database
 from .enrich_runner import run_enrich
@@ -163,6 +164,12 @@ def _build_parser() -> argparse.ArgumentParser:
     ref = sub.add_parser("ref", help="run ref sql and reference data")
     ref.add_argument("--date", help="date in YYYY-MM-DD", required=False)
 
+    backfill = sub.add_parser("backfill", help="run backfill for a date range")
+    backfill.add_argument("--start", help="start date in YYYY-MM-DD", required=True)
+    backfill.add_argument("--end", help="end date in YYYY-MM-DD", required=True)
+    backfill.add_argument("--checks", action="store_true", help="run checks per day")
+    backfill.add_argument("--resume", action="store_true", help="resume from state file")
+
     checks = sub.add_parser("checks", help="run checks")
     checks.add_argument("--date", help="date in YYYY-MM-DD", required=False)
 
@@ -200,6 +207,13 @@ def main(argv: list[str] | None = None) -> None:
         if args.command == "ref":
             ensure_database()
             run_ref()
+        elif args.command == "backfill":
+            run_backfill(
+                _validate_date(args.start),
+                _validate_date(args.end),
+                args.checks,
+                args.resume,
+            )
         elif args.command == "checks":
             cmd_checks(args.date)
         elif args.command == "enrich":

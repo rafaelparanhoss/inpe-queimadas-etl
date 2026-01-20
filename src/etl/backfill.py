@@ -1,0 +1,169 @@
+from __future__ import annotations
+
+import json
+import logging
+import os
+import shutil
+import subprocess
+import sys
+import time
+from datetime import date, timedelta
+from pathlib import Path
+
+import psycopg
+
+from .checks import run_checks
+from .config import settings
+from .db_bootstrap import ensure_database
+from .enrich_runner import run_enrich
+from .marts_runner import run_marts
+from .ref_runner import run_ref
+
+log = logging.getLogger("backfill")
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _run_cli(date_str: str) -> None:
+    env = os.environ.copy()
+    env["PYTHONPATH"] = "src"
+    uv_bin = shutil.which("uv")
+    if uv_bin:
+        cmd = [uv_bin, "run", "python", "-m", "etl.cli", "--date", date_str]
+    else:
+        cmd = [sys.executable, "-m", "uv", "run", "python", "-m", "etl.cli", "--date", date_str]
+    subprocess.run(cmd, check=True, cwd=_repo_root(), env=env)
+
+
+def _state_path(start: date, end: date) -> Path:
+    state_dir = Path(settings.data_dir) / "state"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    return state_dir / f"backfill_{start.isoformat()}_{end.isoformat()}.json"
+
+
+def _read_state(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        log.warning("state read failed | path=%s", path.as_posix())
+        return {}
+
+
+def _write_state(path: Path, payload: dict) -> None:
+    tmp_path = path.with_suffix(".tmp")
+    tmp_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    tmp_path.replace(path)
+
+
+def _check_day_counts(day: date) -> None:
+    conn_str = (
+        f"host={settings.db_host} port={settings.db_port} dbname={settings.db_name} "
+        f"user={settings.db_user} password={settings.db_password}"
+    )
+    sql = """
+    select
+      (select count(*) from raw.inpe_focos where file_date = %s::date) as raw_n,
+      (select count(*) from curated.inpe_focos_enriched where file_date = %s::date) as curated_n,
+      (select coalesce(sum(n_focos),0)
+       from marts.focos_diario_municipio
+       where day = %s::date) as marts_day_sum,
+      (select round(
+        100.0 * count(*) filter (where mun_cd_mun is not null)
+        / nullif(count(*), 0),
+        2
+      )
+       from curated.inpe_focos_enriched
+       where file_date = %s::date) as pct_mun
+    """
+    with psycopg.connect(conn_str) as conn, conn.cursor() as cur:
+        cur.execute(sql, (day, day, day, day))
+        raw_n, curated_n, marts_day_sum, pct_mun = cur.fetchone()
+
+    if raw_n != curated_n:
+        raise RuntimeError(
+            f"raw_n != curated_n | raw_n={raw_n} | curated_n={curated_n} | date={day.isoformat()}"
+        )
+
+    if pct_mun is not None and float(pct_mun) >= 99.9:
+        if marts_day_sum != curated_n:
+            raise RuntimeError(
+                "marts_day_sum != curated_n"
+                f" | marts_day_sum={marts_day_sum} | curated_n={curated_n} | date={day.isoformat()}"
+            )
+    else:
+        log.info("counts check skipped | pct_com_mun=%s | date=%s", pct_mun, day.isoformat())
+
+
+def run_backfill(start_str: str, end_str: str, checks: bool, resume: bool) -> None:
+    start = date.fromisoformat(start_str)
+    end = date.fromisoformat(end_str)
+    if start > end:
+        raise ValueError("start date must be <= end date")
+
+    state_file = _state_path(start, end)
+    state = _read_state(state_file)
+
+    current = start
+    if resume:
+        last_completed = state.get("last_completed")
+        if last_completed:
+            last_date = date.fromisoformat(last_completed)
+            current = last_date + timedelta(days=1)
+        if current > end:
+            log.info("backfill already complete | start=%s | end=%s", start, end)
+            return
+
+    ensure_database()
+    run_ref()
+
+    n_ok = 0
+    n_fail = 0
+    first_fail = None
+
+    while current <= end:
+        t0 = time.perf_counter()
+        try:
+            _run_cli(current.isoformat())
+            run_enrich(current.isoformat())
+            run_marts(current.isoformat())
+            if checks:
+                run_checks(current.isoformat())
+                _check_day_counts(current)
+            n_ok += 1
+            _write_state(
+                state_file,
+                {
+                    "start": start.isoformat(),
+                    "end": end.isoformat(),
+                    "last_completed": current.isoformat(),
+                    "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                },
+            )
+            log.info(
+                "day ok | date=%s | dt=%.2fs",
+                current.isoformat(),
+                time.perf_counter() - t0,
+            )
+        except Exception as exc:
+            n_fail += 1
+            first_fail = first_fail or current.isoformat()
+            log.error(
+                "day fail | date=%s | err=%s",
+                current.isoformat(),
+                exc,
+            )
+            break
+        current = current + timedelta(days=1)
+
+    log.info(
+        "summary | n_ok=%s | n_fail=%s | first_fail=%s",
+        n_ok,
+        n_fail,
+        first_fail or "-",
+    )
+    if n_fail:
+        raise SystemExit(1)
