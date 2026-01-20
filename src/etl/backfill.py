@@ -59,7 +59,7 @@ def _write_state(path: Path, payload: dict) -> None:
     tmp_path.replace(path)
 
 
-def _check_day_counts(day: date) -> None:
+def _check_day_counts(day: date) -> tuple[float, int]:
     conn_str = (
         f"host={settings.db_host} port={settings.db_port} dbname={settings.db_name} "
         f"user={settings.db_user} password={settings.db_password}"
@@ -67,35 +67,65 @@ def _check_day_counts(day: date) -> None:
     sql = """
     select
       (select count(*) from raw.inpe_focos where file_date = %s::date) as raw_n,
-      (select count(*) from curated.inpe_focos_enriched where file_date = %s::date) as curated_n,
-      (select coalesce(sum(n_focos),0)
+      (select count(*) from curated.inpe_focos_enriched where file_date = %s::date) as curated_total,
+      (select count(*) from curated.inpe_focos_enriched
+       where file_date = %s::date and mun_cd_mun is not null) as curated_com_mun,
+      (select coalesce(sum(n_focos), 0)
        from marts.focos_diario_municipio
-       where day = %s::date) as marts_day_sum,
-      (select round(
-        100.0 * count(*) filter (where mun_cd_mun is not null)
-        / nullif(count(*), 0),
-        2
-      )
-       from curated.inpe_focos_enriched
-       where file_date = %s::date) as pct_mun
+       where day = %s::date) as marts_mun_sum,
+      (select coalesce(sum(n_focos), 0)
+       from marts.focos_diario_uf
+       where day = %s::date) as marts_uf_sum
     """
     with psycopg.connect(conn_str) as conn, conn.cursor() as cur:
-        cur.execute(sql, (day, day, day, day))
-        raw_n, curated_n, marts_day_sum, pct_mun = cur.fetchone()
+        cur.execute(sql, (day, day, day, day, day))
+        raw_n, curated_total, curated_com_mun, marts_mun_sum, marts_uf_sum = cur.fetchone()
 
-    if raw_n != curated_n:
+    curated_total = int(curated_total or 0)
+    curated_com_mun = int(curated_com_mun or 0)
+    marts_mun_sum = int(marts_mun_sum or 0)
+    marts_uf_sum = int(marts_uf_sum or 0)
+    raw_n = int(raw_n or 0)
+
+    if raw_n != curated_total:
         raise RuntimeError(
-            f"raw_n != curated_n | raw_n={raw_n} | curated_n={curated_n} | date={day.isoformat()}"
+            "raw_n != curated_total"
+            f" | raw_n={raw_n} | curated_total={curated_total} | date={day.isoformat()}"
         )
 
-    if pct_mun is not None and float(pct_mun) >= 99.9:
-        if marts_day_sum != curated_n:
+    if curated_total == 0:
+        if marts_mun_sum != 0 or marts_uf_sum != 0:
             raise RuntimeError(
-                "marts_day_sum != curated_n"
-                f" | marts_day_sum={marts_day_sum} | curated_n={curated_n} | date={day.isoformat()}"
+                "marts sums != 0 with empty curated"
+                f" | marts_mun_sum={marts_mun_sum} | marts_uf_sum={marts_uf_sum} | date={day.isoformat()}"
             )
-    else:
-        log.info("counts check skipped | pct_com_mun=%s | date=%s", pct_mun, day.isoformat())
+        return 0.0, 0
+
+    if marts_mun_sum != curated_com_mun:
+        raise RuntimeError(
+            "marts_mun_sum != curated_com_mun"
+            f" | marts_mun_sum={marts_mun_sum} | curated_com_mun={curated_com_mun}"
+            f" | date={day.isoformat()}"
+        )
+
+    if marts_uf_sum != curated_com_mun:
+        raise RuntimeError(
+            "marts_uf_sum != curated_com_mun"
+            f" | marts_uf_sum={marts_uf_sum} | curated_com_mun={curated_com_mun}"
+            f" | date={day.isoformat()}"
+        )
+
+    missing_mun = curated_total - curated_com_mun
+    pct_mun = round(100.0 * curated_com_mun / curated_total, 2)
+    if missing_mun > 0:
+        log.warning(
+            "missing mun_cd_mun | date=%s | missing=%s | pct_com_mun=%s",
+            day.isoformat(),
+            missing_mun,
+            pct_mun,
+        )
+
+    return pct_mun, missing_mun
 
 
 def run_backfill(start_str: str, end_str: str, checks: bool, resume: bool) -> None:
@@ -123,6 +153,10 @@ def run_backfill(start_str: str, end_str: str, checks: bool, resume: bool) -> No
     n_ok = 0
     n_fail = 0
     first_fail = None
+    pct_min = None
+    pct_sum = 0.0
+    pct_count = 0
+    missing_total = 0
 
     while current <= end:
         t0 = time.perf_counter()
@@ -132,7 +166,11 @@ def run_backfill(start_str: str, end_str: str, checks: bool, resume: bool) -> No
             run_marts(current.isoformat())
             if checks:
                 run_checks(current.isoformat())
-                _check_day_counts(current)
+                pct_mun, missing_mun = _check_day_counts(current)
+                pct_min = pct_mun if pct_min is None else min(pct_min, pct_mun)
+                pct_sum += pct_mun
+                pct_count += 1
+                missing_total += missing_mun
             n_ok += 1
             _write_state(
                 state_file,
@@ -160,10 +198,13 @@ def run_backfill(start_str: str, end_str: str, checks: bool, resume: bool) -> No
         current = current + timedelta(days=1)
 
     log.info(
-        "summary | n_ok=%s | n_fail=%s | first_fail=%s",
+        "summary | n_ok=%s | n_fail=%s | first_fail=%s | pct_min=%s | pct_avg=%s | missing_mun_total=%s",
         n_ok,
         n_fail,
         first_fail or "-",
+        "-" if pct_min is None else f"{pct_min:.2f}",
+        "-" if pct_count == 0 else f"{(pct_sum / pct_count):.2f}",
+        missing_total,
     )
     if n_fail:
         raise SystemExit(1)
