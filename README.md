@@ -82,6 +82,16 @@ Notas:
 - delta_abs = n_q4 - n_q1 (q1 = primeiros 90 dias, q4 = ultimos 90 dias do intervalo)
 - delta_pct = variacao percentual vs n_q1 (null quando n_q1 = 0)
 
+### Figuras e notebook
+Gerar os packs e as figuras:
+```bash
+uv run python -m etl.app analytics-range --start 2025-01-01 --end 2026-01-20
+uv run python -m etl.app report-range --start 2025-01-01 --end 2026-01-20
+uv run python -m etl.app make-figures --start 2025-01-01 --end 2026-01-20
+```
+Notebook:
+- `notebooks/annual_analytics_2025_2026.ipynb`
+
 ### Analise anual
 ```bash
 uv run python -m etl.app report-range --start 2025-01-01 --end 2026-01-20
