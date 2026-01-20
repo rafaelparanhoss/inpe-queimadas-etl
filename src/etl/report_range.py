@@ -7,6 +7,7 @@ from pathlib import Path
 import psycopg
 
 from .config import settings
+from .sql_runner import run_sql_file
 
 
 def _log(message: str) -> None:
@@ -51,9 +52,22 @@ def run_report_range(start_str: str, end_str: str) -> None:
 
     summary_path = report_dir / "summary.txt"
     br_daily_csv = report_dir / "br_daily.csv"
+    uf_monthly_csv = report_dir / "uf_monthly.csv"
     uf_daily_csv = report_dir / "uf_daily.csv"
+    uf_period_csv = report_dir / "uf_period.csv"
     uf_top_csv = report_dir / "uf_top.csv"
+    mun_period_csv = report_dir / "mun_period.csv"
+    mun_monthly_top_csv = report_dir / "mun_monthly_top.csv"
     mun_top_csv = report_dir / "mun_top.csv"
+
+    run_sql_file(
+        "sql/marts/40_focos_periodo_uf.sql",
+        {"START": start_str, "END": end_str},
+    )
+    run_sql_file(
+        "sql/marts/41_focos_periodo_mun.sql",
+        {"START": start_str, "END": end_str},
+    )
 
     with _connect() as conn, conn.cursor() as cur:
         summary_row = _fetch_one(
@@ -106,6 +120,25 @@ def run_report_range(start_str: str, end_str: str) -> None:
             (start, end),
         )
 
+        uf_monthly_rows = _fetch_all(
+            cur,
+            """
+            select
+              date_trunc('month', day)::date as month,
+              uf,
+              sum(n_focos) as n_focos,
+              round(
+                (100 * sum(n_focos)::numeric) / nullif(max(uf_area_km2)::numeric, 0),
+                4
+              ) as focos_por_100km2
+            from marts.focos_diario_uf
+            where day between %s::date and %s::date
+            group by 1, 2
+            order by 1, 2;
+            """,
+            (start, end),
+        )
+
         uf_daily_rows = _fetch_all(
             cur,
             """
@@ -113,6 +146,27 @@ def run_report_range(start_str: str, end_str: str) -> None:
             from marts.focos_diario_uf
             where day between %s::date and %s::date
             order by day, uf;
+            """,
+            (start, end),
+        )
+
+        uf_period_rows = _fetch_all(
+            cur,
+            """
+            select
+              period_start,
+              period_end,
+              uf,
+              uf_area_km2,
+              n_focos_total,
+              n_focos_avg_daily,
+              n_focos_max_daily,
+              peak_day,
+              focos_por_100km2
+            from marts.focos_periodo_uf
+            where period_start = %s::date
+              and period_end = %s::date
+            order by n_focos_total desc;
             """,
             (start, end),
         )
@@ -128,6 +182,67 @@ def run_report_range(start_str: str, end_str: str) -> None:
             where day between %s::date and %s::date
             group by uf
             order by n_focos_total desc;
+            """,
+            (start, end),
+        )
+
+        mun_period_rows = _fetch_all(
+            cur,
+            """
+            select
+              period_start,
+              period_end,
+              mun_cd_mun,
+              mun_nm_mun,
+              mun_uf,
+              mun_area_km2,
+              n_focos_total,
+              n_focos_avg_daily,
+              n_focos_max_daily,
+              peak_day,
+              focos_por_100km2
+            from marts.focos_periodo_mun
+            where period_start = %s::date
+              and period_end = %s::date
+            order by n_focos_total desc;
+            """,
+            (start, end),
+        )
+
+        mun_monthly_top_rows = _fetch_all(
+            cur,
+            """
+            with monthly as (
+              select
+                date_trunc('month', day)::date as month,
+                mun_cd_mun,
+                mun_nm_mun,
+                mun_uf,
+                sum(n_focos) as n_focos
+              from marts.focos_diario_municipio
+              where day between %s::date and %s::date
+              group by 1, 2, 3, 4
+            ),
+            ranked as (
+              select
+                month,
+                mun_cd_mun,
+                mun_nm_mun,
+                mun_uf,
+                n_focos,
+                row_number() over (partition by month order by n_focos desc) as rank
+              from monthly
+            )
+            select
+              month,
+              mun_cd_mun,
+              mun_nm_mun,
+              mun_uf,
+              n_focos,
+              rank
+            from ranked
+            where rank <= 10
+            order by month, rank;
             """,
             (start, end),
         )
@@ -162,6 +277,7 @@ def run_report_range(start_str: str, end_str: str) -> None:
         "notes:",
         "- total_focos inclui focos sem municipio",
         "- pct_com_mun e missing_mun medem a qualidade do join espacial",
+        "- uf_period e mun_period usam marts.focos_periodo_uf e marts.focos_periodo_mun",
         "",
     ]
     summary_text = "\n".join(summary_lines)
@@ -175,8 +291,46 @@ def run_report_range(start_str: str, end_str: str) -> None:
         ["day", "n_focos_total", "n_focos_com_mun", "pct_com_mun", "missing_mun"],
         br_daily_rows,
     )
+    _write_csv(uf_monthly_csv, ["month", "uf", "n_focos", "focos_por_100km2"], uf_monthly_rows)
     _write_csv(uf_daily_csv, ["day", "uf", "n_focos", "focos_por_100km2"], uf_daily_rows)
+    _write_csv(
+        uf_period_csv,
+        [
+            "period_start",
+            "period_end",
+            "uf",
+            "uf_area_km2",
+            "n_focos_total",
+            "n_focos_avg_daily",
+            "n_focos_max_daily",
+            "peak_day",
+            "focos_por_100km2",
+        ],
+        uf_period_rows,
+    )
     _write_csv(uf_top_csv, ["uf", "n_focos_total", "rank"], uf_top_rows)
+    _write_csv(
+        mun_period_csv,
+        [
+            "period_start",
+            "period_end",
+            "mun_cd_mun",
+            "mun_nm_mun",
+            "mun_uf",
+            "mun_area_km2",
+            "n_focos_total",
+            "n_focos_avg_daily",
+            "n_focos_max_daily",
+            "peak_day",
+            "focos_por_100km2",
+        ],
+        mun_period_rows,
+    )
+    _write_csv(
+        mun_monthly_top_csv,
+        ["month", "mun_cd_mun", "mun_nm_mun", "mun_uf", "n_focos", "rank"],
+        mun_monthly_top_rows,
+    )
     _write_csv(
         mun_top_csv,
         ["mun_cd_mun", "mun_nm_mun", "mun_uf", "n_focos_total", "rank"],
