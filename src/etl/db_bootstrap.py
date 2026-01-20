@@ -24,15 +24,15 @@ def _docker_exec(container: str, args: list[str], capture: bool = False) -> subp
     return _run(cmd, capture=capture)
 
 
-def _psql_scalar(container: str, sql: str) -> str:
+def _psql_scalar(container: str, user: str, database: str, sql: str) -> str:
     result = _docker_exec(
         container,
         [
             "psql",
             "-U",
-            "postgres",
+            user,
             "-d",
-            "postgres",
+            database,
             "-v",
             "ON_ERROR_STOP=1",
             "-tA",
@@ -49,6 +49,7 @@ def ensure_database(timeout_sec: int = 60, interval_sec: float = 2.0) -> None:
     db_user = os.getenv("DB_USER", settings.db_user)
     db_name = os.getenv("DB_NAME", settings.db_name)
     db_password = os.getenv("DB_PASSWORD", settings.db_password)
+    admin_user = os.getenv("DB_ADMIN_USER", db_user)
 
     deadline = time.time() + timeout_sec
     while True:
@@ -60,10 +61,27 @@ def ensure_database(timeout_sec: int = 60, interval_sec: float = 2.0) -> None:
                 raise TimeoutError("pg_isready timed out")
             time.sleep(interval_sec)
 
+    admin_db = None
+    while admin_db is None:
+        for candidate in ("postgres", db_name):
+            try:
+                _psql_scalar(container, admin_user, candidate, "select 1;")
+                admin_db = candidate
+                break
+            except subprocess.CalledProcessError:
+                continue
+        if admin_db is None:
+            if time.time() >= deadline:
+                raise RuntimeError("no admin database available for bootstrap")
+            time.sleep(interval_sec)
+
     while True:
         try:
             role_exists = _psql_scalar(
-                container, f"select 1 from pg_roles where rolname = '{db_user}';"
+                container,
+                admin_user,
+                admin_db,
+                f"select 1 from pg_roles where rolname = '{db_user}';",
             )
             break
         except subprocess.CalledProcessError:
@@ -78,9 +96,9 @@ def ensure_database(timeout_sec: int = 60, interval_sec: float = 2.0) -> None:
             [
                 "psql",
                 "-U",
-                "postgres",
+                admin_user,
                 "-d",
-                "postgres",
+                admin_db,
                 "-v",
                 "ON_ERROR_STOP=1",
                 "-c",
@@ -90,7 +108,10 @@ def ensure_database(timeout_sec: int = 60, interval_sec: float = 2.0) -> None:
         log.info("[db_bootstrap] role created")
 
     db_exists = _psql_scalar(
-        container, f"select 1 from pg_database where datname = '{db_name}';"
+        container,
+        admin_user,
+        admin_db,
+        f"select 1 from pg_database where datname = '{db_name}';",
     )
     if db_exists == "1":
         log.info("[db_bootstrap] db exists")
@@ -100,9 +121,9 @@ def ensure_database(timeout_sec: int = 60, interval_sec: float = 2.0) -> None:
             [
                 "psql",
                 "-U",
-                "postgres",
+                admin_user,
                 "-d",
-                "postgres",
+                admin_db,
                 "-v",
                 "ON_ERROR_STOP=1",
                 "-c",
