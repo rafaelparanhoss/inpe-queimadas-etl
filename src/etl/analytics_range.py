@@ -109,6 +109,69 @@ def run_analytics_range(
             (start, end),
         )
 
+        span_days = min(90, (end - start).days + 1)
+        q1_start = start
+        q1_end = start + dt.timedelta(days=span_days - 1)
+        q4_start = end - dt.timedelta(days=span_days - 1)
+        q4_end = end
+
+        hotspots_rows = _fetch_all(
+            cur,
+            """
+            select
+              mun_cd_mun,
+              mun_nm_mun,
+              mun_uf,
+              max(mun_area_km2) as mun_area_km2,
+              sum(n_focos) as n_focos_total,
+              round(
+                (100 * sum(n_focos)::numeric) / nullif(max(mun_area_km2)::numeric, 0),
+                4
+              ) as focos_por_100km2
+            from marts.focos_diario_municipio
+            where day between %s::date and %s::date
+            group by mun_cd_mun, mun_nm_mun, mun_uf
+            order by n_focos_total desc
+            limit %s;
+            """,
+            (start, end, top_n),
+        )
+
+        shifts_rows = _fetch_all(
+            cur,
+            """
+            with q1 as (
+              select uf, sum(n_focos) as n_q1
+              from marts.focos_diario_uf
+              where day between %s::date and %s::date
+              group by uf
+            ),
+            q4 as (
+              select uf, sum(n_focos) as n_q4
+              from marts.focos_diario_uf
+              where day between %s::date and %s::date
+              group by uf
+            )
+            select
+              coalesce(q1.uf, q4.uf) as uf,
+              coalesce(q1.n_q1, 0) as n_q1,
+              coalesce(q4.n_q4, 0) as n_q4,
+              coalesce(q4.n_q4, 0) - coalesce(q1.n_q1, 0) as delta_abs,
+              case
+                when coalesce(q1.n_q1, 0) = 0 then null
+                else round(
+                  100.0 * (coalesce(q4.n_q4, 0) - coalesce(q1.n_q1, 0))
+                  / nullif(q1.n_q1, 0),
+                  2
+                )
+              end as delta_pct
+            from q1
+            full join q4 on q4.uf = q1.uf
+            order by delta_abs desc, uf;
+            """,
+            (q1_start, q1_end, q4_start, q4_end),
+        )
+
     _write_csv(
         report_dir / "quality_daily.csv",
         ["day", "n_total", "n_com_mun", "pct_com_mun", "missing_mun"],
@@ -122,12 +185,12 @@ def run_analytics_range(
     _write_csv(
         report_dir / "hotspots_mun_period.csv",
         ["mun_cd_mun", "mun_nm_mun", "mun_uf", "mun_area_km2", "n_focos_total", "focos_por_100km2"],
-        [],
+        hotspots_rows,
     )
     _write_csv(
         report_dir / "top_shifts_uf.csv",
         ["uf", "n_q1", "n_q4", "delta_abs", "delta_pct"],
-        [],
+        shifts_rows,
     )
 
     _log("done")
