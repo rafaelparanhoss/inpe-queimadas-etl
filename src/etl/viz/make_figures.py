@@ -81,8 +81,17 @@ def _rolling_mean(values: list[float], window: int) -> list[float]:
     return out
 
 
-def _save_fig(plt, fig, out_path: Path, dpi: int) -> None:
-    fig.tight_layout()
+def _save_fig(
+    plt,
+    fig,
+    out_path: Path,
+    dpi: int,
+    rect: tuple[float, float, float, float] | None = None,
+) -> None:
+    if rect:
+        fig.tight_layout(rect=rect)
+    else:
+        fig.tight_layout()
     fig.savefig(out_path, dpi=dpi, bbox_inches="tight", facecolor="white")
     plt.close(fig)
 
@@ -161,6 +170,8 @@ def _plot_total_vs_com(
 
 
 def _plot_seasonality(plt, uf_rows: list[dict[str, str]], out_path: Path, dpi: int) -> None:
+    from matplotlib import dates as mdates
+
     totals: dict[str, int] = {}
     monthly: dict[str, dict[dt.date, int]] = {}
 
@@ -179,6 +190,7 @@ def _plot_seasonality(plt, uf_rows: list[dict[str, str]], out_path: Path, dpi: i
         series = [monthly.get(uf, {}).get(month, 0) for month in months]
         ax.plot(months, series, linewidth=1.2, label=uf)
 
+    ax.set_title("Sazonalidade por UF (n_focos mensal, top 10)")
     ax.set_ylabel("n_focos")
     ax.set_xlabel("month")
     ax.legend(
@@ -187,8 +199,10 @@ def _plot_seasonality(plt, uf_rows: list[dict[str, str]], out_path: Path, dpi: i
         fontsize=8,
         frameon=False,
     )
+    ax.xaxis.set_major_locator(mdates.MonthLocator(interval=2))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
     fig.autofmt_xdate()
-    _save_fig(plt, fig, out_path, dpi)
+    _save_fig(plt, fig, out_path, dpi, rect=(0, 0, 0.8, 1))
 
 
 def _truncate_label(value: str, max_len: int) -> str:
