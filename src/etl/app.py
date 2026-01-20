@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .config import settings
 from .checks import run_checks
+from .db_bootstrap import ensure_database
 from .enrich_runner import run_enrich
 from .marts_runner import run_marts
 from .ref_runner import run_ref
@@ -141,6 +142,7 @@ def cmd_reprocess(date_str: str, dry_run: bool) -> None:
 
 def cmd_run(date_str: str, checks: bool) -> None:
     date_str = _validate_date(date_str)
+    ensure_database()
     run_ref()
     _run_cli(date_str)
     run_enrich(date_str)
@@ -196,6 +198,7 @@ def main(argv: list[str] | None = None) -> None:
 
     try:
         if args.command == "ref":
+            ensure_database()
             run_ref()
         elif args.command == "checks":
             cmd_checks(args.date)
