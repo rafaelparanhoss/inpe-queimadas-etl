@@ -61,6 +61,20 @@ uv run python -m etl.app today
 ```
 nota report-range: total inclui focos sem municipio; pct_com_mun e missing_mun medem a qualidade do join espacial.
 
+### Analytics pack (intervalo)
+```bash
+uv run python -m etl.app analytics-range --start 2025-01-01 --end 2026-01-20
+```
+Opcional:
+```bash
+uv run python -m etl.app analytics-range --start 2025-01-01 --end 2026-01-20 --out data/reports/analytics_custom --top-n 100
+```
+Outputs (data/reports/analytics_<start>_<end>/):
+- quality_daily.csv (day, n_total, n_com_mun, pct_com_mun, missing_mun)
+- seasonality_uf.csv (uf, month, n_focos, focos_por_100km2, rank_no_mes)
+- hotspots_mun_period.csv (top N do periodo, por municipio)
+- top_shifts_uf.csv (delta entre primeiros e ultimos 90 dias do intervalo)
+
 ### Analise anual
 ```bash
 uv run python -m etl.app report-range --start 2025-01-01 --end 2026-01-20
