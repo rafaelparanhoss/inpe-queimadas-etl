@@ -87,7 +87,18 @@ def _save_fig(plt, fig, out_path: Path, dpi: int) -> None:
     plt.close(fig)
 
 
-def _plot_quality(plt, quality_rows: list[dict[str, str]], out_path: Path, dpi: int) -> None:
+def _plot_quality(
+    plt,
+    quality_rows: list[dict[str, str]],
+    out_path: Path,
+    dpi: int,
+    start_str: str,
+    end_str: str,
+    n_total: int,
+    missing_total: int,
+) -> None:
+    from matplotlib import ticker as mticker
+
     days = [_parse_date(row["day"]) for row in quality_rows]
     pct_com = [_to_float(row["pct_com_mun"]) for row in quality_rows]
     pct_missing = [max(0.0, 100.0 - value) for value in pct_com]
@@ -105,7 +116,7 @@ def _plot_quality(plt, quality_rows: list[dict[str, str]], out_path: Path, dpi: 
     if miss_days:
         ax_miss.scatter(miss_days, miss_values, color="#d62728", s=18, zorder=3)
 
-    ax_pct.set_ylabel("pct_missing")
+    ax_pct.set_ylabel("pct_missing (%)")
     ax_miss.set_ylabel("missing_mun")
     ax_pct.set_xlabel("day")
 
@@ -113,6 +124,12 @@ def _plot_quality(plt, quality_rows: list[dict[str, str]], out_path: Path, dpi: 
         ax_pct.set_ylim(0, 0.5)
     else:
         ax_pct.set_ylim(0, max_pct_missing * 1.1)
+    ax_pct.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:.2f}%"))
+
+    title = f"Qualidade do join espacial ({start_str} a {end_str})"
+    subtitle = f"n_total={n_total:,} | missing_total={missing_total:,}"
+    ax_pct.set_title(title, pad=12)
+    ax_pct.text(0.5, 1.02, subtitle, transform=ax_pct.transAxes, ha="center", fontsize=9)
 
     fig.autofmt_xdate()
     _save_fig(plt, fig, out_path, dpi)
@@ -296,7 +313,19 @@ def run_make_figures(
     shifts_rows = _read_csv(analytics_dir / "top_shifts_uf.csv")
     br_rows = _read_csv(range_dir / "br_daily.csv")
 
-    _plot_quality(plt, quality_rows, figures_dir / "quality_pct_missing.png", dpi)
+    n_total = sum(_to_int(row["n_total"]) for row in quality_rows)
+    missing_total = sum(_to_int(row["missing_mun"]) for row in quality_rows)
+
+    _plot_quality(
+        plt,
+        quality_rows,
+        figures_dir / "quality_pct_missing.png",
+        dpi,
+        start_str,
+        end_str,
+        n_total,
+        missing_total,
+    )
     _plot_total_vs_com(plt, br_rows, figures_dir / "total_vs_com_mun.png", smooth_days, dpi)
     _plot_seasonality(plt, seasonality_rows, figures_dir / "seasonality_uf_top10.png", dpi)
     _plot_hotspots(
