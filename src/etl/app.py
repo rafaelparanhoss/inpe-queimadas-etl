@@ -181,10 +181,24 @@ def cmd_analytics_range(
     )
 
 
-def cmd_make_figures(start_str: str, end_str: str, out_dir: str | None) -> None:
+def cmd_make_figures(
+    start_str: str,
+    end_str: str,
+    out_dir: str | None,
+    fig_top_n: int,
+    dpi: int,
+    smooth_days: int,
+) -> None:
     from .viz.make_figures import run_make_figures
 
-    run_make_figures(_validate_date(start_str), _validate_date(end_str), out_dir)
+    run_make_figures(
+        _validate_date(start_str),
+        _validate_date(end_str),
+        out_dir,
+        fig_top_n,
+        dpi,
+        smooth_days,
+    )
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -225,6 +239,9 @@ def _build_parser() -> argparse.ArgumentParser:
     make_figures.add_argument("--start", help="start date in YYYY-MM-DD", required=True)
     make_figures.add_argument("--end", help="end date in YYYY-MM-DD", required=True)
     make_figures.add_argument("--out", help="output directory", required=False)
+    make_figures.add_argument("--fig-top-n", help="top N for hotspots figures", type=int, default=25)
+    make_figures.add_argument("--dpi", help="output dpi", type=int, default=200)
+    make_figures.add_argument("--smooth-days", help="rolling mean days", type=int, default=7)
 
     enrich = sub.add_parser("enrich", help="run enrich sql for a date")
     enrich.add_argument("--date", help="date in YYYY-MM-DD", required=True)
@@ -276,7 +293,7 @@ def main(argv: list[str] | None = None) -> None:
         elif args.command == "analytics-range":
             cmd_analytics_range(args.start, args.end, args.out, args.top_n, args.shifts_top, args.shifts_sort)
         elif args.command == "make-figures":
-            cmd_make_figures(args.start, args.end, args.out)
+            cmd_make_figures(args.start, args.end, args.out, args.fig_top_n, args.dpi, args.smooth_days)
         elif args.command == "enrich":
             run_enrich(_validate_date(args.date))
         elif args.command == "marts":

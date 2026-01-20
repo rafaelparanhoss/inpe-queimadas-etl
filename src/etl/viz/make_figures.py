@@ -234,7 +234,14 @@ def _plot_shifts(
     _save_fig(plt, fig, out_path, dpi)
 
 
-def run_make_figures(start_str: str, end_str: str, out_dir: str | None) -> None:
+def run_make_figures(
+    start_str: str,
+    end_str: str,
+    out_dir: str | None,
+    fig_top_n: int = 25,
+    dpi: int = 200,
+    smooth_days: int = 7,
+) -> None:
     report_root = Path(settings.data_dir) / "reports"
     analytics_dir = report_root / f"analytics_{start_str}_{end_str}"
     range_dir = report_root / f"range_{start_str}_{end_str}"
@@ -245,9 +252,6 @@ def run_make_figures(start_str: str, end_str: str, out_dir: str | None) -> None:
         figures_dir = Path(settings.data_dir) / "figures" / f"{start_str}_{end_str}"
     figures_dir.mkdir(parents=True, exist_ok=True)
 
-    smooth_days = 7
-    dpi = 200
-    fig_top_n = 25
     shifts_top_n = 15
     _log(
         "analytics_dir=%s | range_dir=%s | out_dir=%s | smooth_days=%s | dpi=%s | fig_top_n=%s | shifts_top_n=%s",
