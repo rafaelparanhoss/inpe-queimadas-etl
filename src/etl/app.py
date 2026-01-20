@@ -62,6 +62,18 @@ def _run_script(script: Path, args: list[str]) -> None:
     subprocess.run(cmd, check=True, cwd=_repo_root())
 
 
+def _run_cli(date_str: str) -> None:
+    env = os.environ.copy()
+    env["PYTHONPATH"] = "src"
+    uv_bin = shutil.which("uv")
+    if uv_bin:
+        cmd = [uv_bin, "run", "python", "-m", "etl.cli", "--date", date_str]
+    else:
+        cmd = [sys.executable, "-m", "uv", "run", "python", "-m", "etl.cli", "--date", date_str]
+    log.info("run cli | %s", " ".join(cmd))
+    subprocess.run(cmd, check=True, cwd=_repo_root(), env=env)
+
+
 def _setup_logging() -> Path:
     log_dir = Path(settings.data_dir) / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -128,10 +140,13 @@ def cmd_reprocess(date_str: str, dry_run: bool) -> None:
 
 
 def cmd_run(date_str: str, checks: bool) -> None:
-    args = ["--date", _validate_date(date_str)]
+    date_str = _validate_date(date_str)
+    run_ref()
+    _run_cli(date_str)
+    run_enrich(date_str)
+    run_marts(date_str)
     if checks:
-        args.append("--checks")
-    _run_script(_repo_root() / "scripts" / "run_all.sh", args)
+        run_checks(date_str)
 
 
 def cmd_today(date_str: str | None) -> None:
