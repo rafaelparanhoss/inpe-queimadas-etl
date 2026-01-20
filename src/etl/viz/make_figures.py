@@ -43,6 +43,30 @@ def _get_pyplot():
     return plt
 
 
+def _apply_style(plt, dpi: int) -> None:
+    plt.rcParams.update(
+        {
+            "figure.dpi": dpi,
+            "savefig.dpi": dpi,
+            "font.size": 10,
+            "axes.titlesize": 12,
+            "axes.labelsize": 10,
+            "xtick.labelsize": 9,
+            "ytick.labelsize": 9,
+            "legend.fontsize": 9,
+            "axes.grid": True,
+            "grid.alpha": 0.25,
+            "grid.linestyle": "--",
+            "grid.linewidth": 0.6,
+            "axes.spines.top": False,
+            "axes.spines.right": False,
+            "legend.frameon": False,
+            "figure.facecolor": "white",
+            "axes.facecolor": "white",
+        }
+    )
+
+
 def _rolling_mean(values: list[float], window: int) -> list[float]:
     if window <= 1:
         return values[:]
@@ -59,7 +83,7 @@ def _rolling_mean(values: list[float], window: int) -> list[float]:
 
 def _save_fig(plt, fig, out_path: Path, dpi: int) -> None:
     fig.tight_layout()
-    fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
+    fig.savefig(out_path, dpi=dpi, bbox_inches="tight", facecolor="white")
     plt.close(fig)
 
 
@@ -265,6 +289,7 @@ def run_make_figures(
     )
 
     plt = _get_pyplot()
+    _apply_style(plt, dpi)
     quality_rows = _read_csv(analytics_dir / "quality_daily.csv")
     seasonality_rows = _read_csv(analytics_dir / "seasonality_uf.csv")
     hotspots_rows = _read_csv(analytics_dir / "hotspots_mun_period.csv")
