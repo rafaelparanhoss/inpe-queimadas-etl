@@ -163,8 +163,22 @@ def cmd_today(date_str: str | None) -> None:
     run_today(resolved)
 
 
-def cmd_analytics_range(start_str: str, end_str: str, out_dir: str | None, top_n: int) -> None:
-    run_analytics_range(_validate_date(start_str), _validate_date(end_str), out_dir, top_n)
+def cmd_analytics_range(
+    start_str: str,
+    end_str: str,
+    out_dir: str | None,
+    top_n: int,
+    shifts_top: int,
+    shifts_sort: str,
+) -> None:
+    run_analytics_range(
+        _validate_date(start_str),
+        _validate_date(end_str),
+        out_dir,
+        top_n,
+        shifts_top,
+        shifts_sort,
+    )
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -187,7 +201,19 @@ def _build_parser() -> argparse.ArgumentParser:
     analytics_range.add_argument("--start", help="start date in YYYY-MM-DD", required=True)
     analytics_range.add_argument("--end", help="end date in YYYY-MM-DD", required=True)
     analytics_range.add_argument("--out", help="output directory", required=False)
-    analytics_range.add_argument("--top-n", help="top N for ranking outputs", type=int, default=50)
+    analytics_range.add_argument("--top-n", help="top N for hotspots", type=int, default=100)
+    analytics_range.add_argument(
+        "--shifts-top",
+        help="top N shifts (default 27)",
+        type=int,
+        default=27,
+    )
+    analytics_range.add_argument(
+        "--shifts-sort",
+        help="sort shifts by abs or pct",
+        choices=["abs", "pct"],
+        default="abs",
+    )
 
     enrich = sub.add_parser("enrich", help="run enrich sql for a date")
     enrich.add_argument("--date", help="date in YYYY-MM-DD", required=True)
@@ -237,7 +263,7 @@ def main(argv: list[str] | None = None) -> None:
         elif args.command == "checks":
             cmd_checks(args.date)
         elif args.command == "analytics-range":
-            cmd_analytics_range(args.start, args.end, args.out, args.top_n)
+            cmd_analytics_range(args.start, args.end, args.out, args.top_n, args.shifts_top, args.shifts_sort)
         elif args.command == "enrich":
             run_enrich(_validate_date(args.date))
         elif args.command == "marts":

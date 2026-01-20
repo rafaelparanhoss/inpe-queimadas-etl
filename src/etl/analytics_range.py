@@ -40,6 +40,8 @@ def run_analytics_range(
     end_str: str,
     out_dir: str | None,
     top_n: int,
+    shifts_top: int,
+    shifts_sort: str,
 ) -> None:
     start = dt.date.fromisoformat(start_str)
     end = dt.date.fromisoformat(end_str)
@@ -52,7 +54,13 @@ def run_analytics_range(
         report_dir = Path(settings.data_dir) / "reports" / f"analytics_{start_str}_{end_str}"
     report_dir.mkdir(parents=True, exist_ok=True)
 
-    _log(f"out_dir={report_dir.as_posix()} | top_n={top_n}")
+    _log(
+        "out_dir=%s | top_n=%s | shifts_top=%s | shifts_sort=%s",
+        report_dir.as_posix(),
+        top_n,
+        shifts_top,
+        shifts_sort,
+    )
 
     with _connect() as conn, conn.cursor() as cur:
         quality_rows = _fetch_all(
@@ -137,9 +145,11 @@ def run_analytics_range(
             (start, end, top_n),
         )
 
-        shifts_rows = _fetch_all(
-            cur,
-            """
+        shifts_sort_key = "delta_abs"
+        if shifts_sort == "pct":
+            shifts_sort_key = "abs(delta_pct)"
+
+        shifts_sql = f"""
             with q1 as (
               select uf, sum(n_focos) as n_q1
               from marts.focos_diario_uf
@@ -167,9 +177,14 @@ def run_analytics_range(
               end as delta_pct
             from q1
             full join q4 on q4.uf = q1.uf
-            order by delta_abs desc, uf;
-            """,
-            (q1_start, q1_end, q4_start, q4_end),
+            order by {shifts_sort_key} desc, uf
+            limit %s;
+            """
+
+        shifts_rows = _fetch_all(
+            cur,
+            shifts_sql,
+            (q1_start, q1_end, q4_start, q4_end, shifts_top),
         )
 
     _write_csv(
