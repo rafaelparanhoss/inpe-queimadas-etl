@@ -74,6 +74,13 @@ Outputs (data/reports/analytics_<start>_<end>/):
 - seasonality_uf.csv (uf, month, n_focos, focos_por_100km2, rank_no_mes)
 - hotspots_mun_period.csv (top N do periodo, por municipio)
 - top_shifts_uf.csv (delta entre primeiros e ultimos 90 dias do intervalo)
+Flags (defaults):
+- --top-n 100
+- --shifts-top 27
+- --shifts-sort abs|pct
+Notas:
+- delta_abs = n_q4 - n_q1 (q1 = primeiros 90 dias, q4 = ultimos 90 dias do intervalo)
+- delta_pct = variacao percentual vs n_q1 (null quando n_q1 = 0)
 
 ### Analise anual
 ```bash
