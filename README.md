@@ -54,6 +54,7 @@ Os comandos python sao os oficiais. Os scripts em `scripts/*.sh` sao wrappers co
 ```bash
 uv run python -m etl.app run --date 2026-01-18 --checks
 uv run python -m etl.app report --date 2026-01-18
+uv run python -m etl.app report-range --start 2026-01-01 --end 2026-01-31
 uv run python -m etl.app reprocess --date 2026-01-18
 uv run python -m etl.app checks --date 2026-01-18
 uv run python -m etl.app today
