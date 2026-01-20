@@ -119,7 +119,7 @@ def _plot_total_vs_com(
     _save_fig(plt, fig, out_path, dpi)
 
 
-def _plot_seasonality(plt, uf_rows: list[dict[str, str]], out_path: Path) -> None:
+def _plot_seasonality(plt, uf_rows: list[dict[str, str]], out_path: Path, dpi: int) -> None:
     totals: dict[str, int] = {}
     monthly: dict[str, dict[dt.date, int]] = {}
 
@@ -133,53 +133,105 @@ def _plot_seasonality(plt, uf_rows: list[dict[str, str]], out_path: Path) -> Non
     top_ufs = sorted(totals.items(), key=lambda item: (-item[1], item[0]))[:10]
     months = sorted({month for rows in monthly.values() for month in rows})
 
-    fig, ax = plt.subplots(figsize=(12, 5))
+    fig, ax = plt.subplots(figsize=(14, 6))
     for uf, _ in top_ufs:
         series = [monthly.get(uf, {}).get(month, 0) for month in months]
         ax.plot(months, series, linewidth=1.2, label=uf)
 
     ax.set_ylabel("n_focos")
     ax.set_xlabel("month")
-    ax.legend(ncol=2, fontsize=8)
+    ax.legend(
+        bbox_to_anchor=(1.02, 1),
+        loc="upper left",
+        fontsize=8,
+        frameon=False,
+    )
     fig.autofmt_xdate()
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=150)
-    plt.close(fig)
+    _save_fig(plt, fig, out_path, dpi)
 
 
-def _plot_hotspots(plt, hotspot_rows: list[dict[str, str]], out_path: Path) -> None:
-    def sort_key(row: dict[str, str]) -> tuple:
+def _truncate_label(value: str, max_len: int) -> str:
+    if len(value) <= max_len:
+        return value
+    return value[: max_len - 3] + "..."
+
+
+def _plot_hotspots(
+    plt,
+    hotspot_rows: list[dict[str, str]],
+    out_path_count: Path,
+    out_path_density: Path,
+    fig_top_n: int,
+    dpi: int,
+) -> None:
+    def sort_key_count(row: dict[str, str]) -> tuple:
         return (
             -_to_int(row["n_focos_total"]),
             -_to_float(row["focos_por_100km2"]),
             row["mun_cd_mun"],
         )
 
-    rows = sorted(hotspot_rows, key=sort_key)
-    labels = [f"{row['mun_uf']}-{row['mun_cd_mun']}" for row in rows]
-    values = [_to_int(row["n_focos_total"]) for row in rows]
+    def sort_key_density(row: dict[str, str]) -> tuple:
+        return (
+            -_to_float(row["focos_por_100km2"]),
+            -_to_int(row["n_focos_total"]),
+            row["mun_cd_mun"],
+        )
 
-    fig_height = max(4.0, 0.2 * len(rows))
+    top_n = min(fig_top_n, len(hotspot_rows))
+    rows_count = sorted(hotspot_rows, key=sort_key_count)[:top_n]
+    rows_density = sorted(hotspot_rows, key=sort_key_density)[:top_n]
+
+    def build_labels(rows: list[dict[str, str]]) -> list[str]:
+        labels = []
+        for row in rows:
+            label = f"{row['mun_nm_mun']} ({row['mun_uf']})"
+            labels.append(_truncate_label(label, 32))
+        return labels
+
+    labels_count = build_labels(rows_count)
+    values_count = [_to_int(row["n_focos_total"]) for row in rows_count]
+
+    fig_height = max(4.0, 0.25 * len(rows_count))
     fig, ax = plt.subplots(figsize=(10, fig_height))
-    ax.barh(labels[::-1], values[::-1], color="#1f77b4")
+    ax.barh(labels_count[::-1], values_count[::-1], color="#1f77b4")
     ax.set_xlabel("n_focos_total")
     ax.set_ylabel("municipio")
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=150)
-    plt.close(fig)
+    _save_fig(plt, fig, out_path_count, dpi)
+
+    labels_density = build_labels(rows_density)
+    values_density = [_to_float(row["focos_por_100km2"]) for row in rows_density]
+    fig_height = max(4.0, 0.25 * len(rows_density))
+    fig, ax = plt.subplots(figsize=(10, fig_height))
+    ax.barh(labels_density[::-1], values_density[::-1], color="#9467bd")
+    ax.set_xlabel("focos_por_100km2")
+    ax.set_ylabel("municipio")
+    _save_fig(plt, fig, out_path_density, dpi)
 
 
-def _plot_shifts(plt, shift_rows: list[dict[str, str]], out_path: Path) -> None:
-    labels = [row["uf"] for row in shift_rows]
-    values = [_to_int(row["delta_abs"]) for row in shift_rows]
+def _plot_shifts(
+    plt,
+    shift_rows: list[dict[str, str]],
+    out_path: Path,
+    shifts_top_n: int,
+    dpi: int,
+) -> None:
+    top_k = min(shifts_top_n, len(shift_rows))
+    rows = sorted(
+        shift_rows,
+        key=lambda row: (-abs(_to_int(row["delta_abs"])), row["uf"]),
+    )[:top_k]
 
-    fig, ax = plt.subplots(figsize=(10, 4))
-    ax.bar(labels, values, color="#ff7f0e")
-    ax.set_ylabel("delta_abs")
-    ax.set_xlabel("uf")
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=150)
-    plt.close(fig)
+    labels = [row["uf"] for row in rows]
+    values = [_to_int(row["delta_abs"]) for row in rows]
+
+    fig_height = max(3.5, 0.3 * len(rows))
+    fig, ax = plt.subplots(figsize=(10, fig_height))
+    ax.barh(labels[::-1], values[::-1], color="#ff7f0e")
+    ax.axvline(0, color="#333333", linewidth=0.8)
+    ax.set_xlabel("delta_abs")
+    ax.set_ylabel("uf")
+    _save_fig(plt, fig, out_path, dpi)
 
 
 def run_make_figures(start_str: str, end_str: str, out_dir: str | None) -> None:
@@ -195,13 +247,17 @@ def run_make_figures(start_str: str, end_str: str, out_dir: str | None) -> None:
 
     smooth_days = 7
     dpi = 200
+    fig_top_n = 25
+    shifts_top_n = 15
     _log(
-        "analytics_dir=%s | range_dir=%s | out_dir=%s | smooth_days=%s | dpi=%s",
+        "analytics_dir=%s | range_dir=%s | out_dir=%s | smooth_days=%s | dpi=%s | fig_top_n=%s | shifts_top_n=%s",
         analytics_dir.as_posix(),
         range_dir.as_posix(),
         figures_dir.as_posix(),
         smooth_days,
         dpi,
+        fig_top_n,
+        shifts_top_n,
     )
 
     plt = _get_pyplot()
@@ -213,8 +269,15 @@ def run_make_figures(start_str: str, end_str: str, out_dir: str | None) -> None:
 
     _plot_quality(plt, quality_rows, figures_dir / "quality_pct_missing.png", dpi)
     _plot_total_vs_com(plt, br_rows, figures_dir / "total_vs_com_mun.png", smooth_days, dpi)
-    _plot_seasonality(plt, seasonality_rows, figures_dir / "seasonality_uf_top10.png")
-    _plot_hotspots(plt, hotspots_rows, figures_dir / "hotspots_topn.png")
-    _plot_shifts(plt, shifts_rows, figures_dir / "shifts_topn.png")
+    _plot_seasonality(plt, seasonality_rows, figures_dir / "seasonality_uf_top10.png", dpi)
+    _plot_hotspots(
+        plt,
+        hotspots_rows,
+        figures_dir / "hotspots_top_count.png",
+        figures_dir / "hotspots_top_density.png",
+        fig_top_n,
+        dpi,
+    )
+    _plot_shifts(plt, shifts_rows, figures_dir / "shifts_topn.png", shifts_top_n, dpi)
 
     _log("done")
