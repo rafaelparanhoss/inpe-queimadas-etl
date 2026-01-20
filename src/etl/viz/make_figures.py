@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import datetime as dt
 from pathlib import Path
+from typing import Sequence
 
 from ..config import settings
 
@@ -32,6 +33,26 @@ def _to_int(value: str) -> int:
 def _to_float(value: str) -> float:
     return float(value) if value else 0.0
 
+def _fmt_int_ptbr(value: float | int) -> str:
+    # 1234567 -> 1.234.567
+    return f"{int(round(value)):,}".replace(",", ".")
+
+
+def _fmt_float_ptbr(value: float, decimals: int = 2) -> str:
+    # 1234.56 -> 1.234,56
+    s = f"{value:,.{decimals}f}"
+    return s.replace(",", "X").replace(".", ",").replace("X", ".")
+
+def _fmt_int_pt(n: int) -> str:
+    # 3517016 -> 3.517.016
+    return f"{n:,}".replace(",", ".")
+
+
+def _fmt_pct_pt(x: float, nd: int = 2) -> str:
+    # 0.1234 -> 0,12%
+    s = f"{x:.{nd}f}".replace(".", ",")
+    return f"{s}%"
+
 
 def _get_pyplot():
     try:
@@ -48,16 +69,15 @@ def _apply_style(plt, dpi: int) -> None:
         {
             "figure.dpi": dpi,
             "savefig.dpi": dpi,
-            "font.size": 10,
-            "axes.titlesize": 12,
-            "axes.labelsize": 10,
-            "xtick.labelsize": 9,
-            "ytick.labelsize": 9,
-            "legend.fontsize": 9,
-            "axes.grid": True,
-            "grid.alpha": 0.25,
-            "grid.linestyle": "--",
-            "grid.linewidth": 0.6,
+            "font.family": "DejaVu Sans",
+            "font.size": 11,
+            "axes.titlesize": 16,
+            "axes.titleweight": "bold",
+            "axes.labelsize": 12,
+            "xtick.labelsize": 10,
+            "ytick.labelsize": 11,
+            "legend.fontsize": 10,
+            "axes.grid": False,  # grid a gente liga por-eixo em cada gráfico
             "axes.spines.top": False,
             "axes.spines.right": False,
             "legend.frameon": False,
@@ -96,6 +116,19 @@ def _save_fig(
     plt.close(fig)
 
 
+def _add_subtitle(ax, text: str) -> None:
+    ax.text(
+        0.0,
+        1.02,
+        text,
+        transform=ax.transAxes,
+        ha="left",
+        va="bottom",
+        fontsize=10,
+        color="#444444",
+    )
+
+
 def _plot_quality(
     plt,
     quality_rows: list[dict[str, str]],
@@ -109,36 +142,56 @@ def _plot_quality(
     from matplotlib import ticker as mticker
 
     days = [_parse_date(row["day"]) for row in quality_rows]
-    pct_com = [_to_float(row["pct_com_mun"]) for row in quality_rows]
-    pct_missing = [max(0.0, 100.0 - value) for value in pct_com]
+    pct_com = [_to_float(row["pct_com_mun"]) for row in quality_rows]  # em %
+    pct_sem_mun = [max(0.0, 100.0 - value) for value in pct_com]  # em %
     missing = [_to_int(row["missing_mun"]) for row in quality_rows]
-    max_pct_missing = max(pct_missing) if pct_missing else 0.0
 
-    fig, ax_pct = plt.subplots(figsize=(12, 4))
-    ax_miss = ax_pct.twinx()
+    pct_sem_mun_max = max(pct_sem_mun) if pct_sem_mun else 0.0
+    pct_sem_mun_lim = max(0.20, pct_sem_mun_max * 1.25)  # deixa legível mesmo com valores bem baixos
 
-    ax_pct.plot(days, pct_missing, color="#1f77b4", linewidth=1.5, label="pct_missing")
-    ax_miss.bar(days, missing, color="#d62728", alpha=0.35, label="missing_mun")
+    fig, ax_pct = plt.subplots(figsize=(13, 4.2))
+    ax_cnt = ax_pct.twinx()
 
+    # linha (%)
+    ax_pct.plot(
+        days,
+        pct_sem_mun,
+        linewidth=2.2,
+        label="% de focos sem município",
+    )
+
+    # barras (contagem)
+    ax_cnt.bar(
+        days,
+        missing,
+        alpha=0.25,
+        label="Focos sem município (contagem)",
+    )
+
+    # destacar dias com missing > 0
     miss_days = [day for day, value in zip(days, missing) if value > 0]
-    miss_values = [value for value in missing if value > 0]
+    miss_vals = [value for value in missing if value > 0]
     if miss_days:
-        ax_miss.scatter(miss_days, miss_values, color="#d62728", s=18, zorder=3)
+        ax_cnt.scatter(miss_days, miss_vals, s=18, zorder=3)
 
-    ax_pct.set_ylabel("pct_missing (%)")
-    ax_miss.set_ylabel("missing_mun")
-    ax_pct.set_xlabel("day")
+    ax_pct.set_ylim(0, pct_sem_mun_lim)
+    ax_pct.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: _fmt_pct_pt(x, 2)))
+    ax_cnt.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: _fmt_int_pt(int(x))))
 
-    if max_pct_missing <= 0.5:
-        ax_pct.set_ylim(0, 0.5)
-    else:
-        ax_pct.set_ylim(0, max_pct_missing * 1.1)
-    ax_pct.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:.2f}%"))
+    ax_pct.set_title("Focos sem município identificado (qualidade da atribuição espacial)")
+    _add_subtitle(
+        ax_pct,
+        f"Período: {start_str} a {end_str} • Total: {_fmt_int_pt(n_total)} • Sem município: {_fmt_int_pt(missing_total)} ({_fmt_pct_pt((missing_total / n_total * 100.0) if n_total else 0.0, 3)})",
+    )
 
-    title = f"Qualidade do join espacial ({start_str} a {end_str})"
-    subtitle = f"n_total={n_total:,} | missing_total={missing_total:,}"
-    ax_pct.set_title(title, pad=12)
-    ax_pct.text(0.5, 1.02, subtitle, transform=ax_pct.transAxes, ha="center", fontsize=9)
+    ax_pct.set_xlabel("Dia")
+    ax_pct.set_ylabel("% sem município")
+    ax_cnt.set_ylabel("Sem município (contagem)")
+
+    # legenda única (sem duplicar)
+    h1, l1 = ax_pct.get_legend_handles_labels()
+    h2, l2 = ax_cnt.get_legend_handles_labels()
+    ax_pct.legend(h1 + h2, l1 + l2, loc="upper right", ncol=2)
 
     fig.autofmt_xdate()
     _save_fig(plt, fig, out_path, dpi)
@@ -158,25 +211,43 @@ def _plot_total_vs_com(
     days = [_parse_date(row["day"]) for row in br_rows]
     total = [_to_int(row["n_focos_total"]) for row in br_rows]
     com_mun = [_to_int(row["n_focos_com_mun"]) for row in br_rows]
+
     total_smooth = _rolling_mean([float(value) for value in total], smooth_days)
     com_smooth = _rolling_mean([float(value) for value in com_mun], smooth_days)
 
-    fig, ax = plt.subplots(figsize=(12, 4))
-    ax.plot(days, total, color="#1f77b4", linewidth=0.8, alpha=0.3, label="total_daily")
-    ax.plot(days, com_mun, color="#2ca02c", linewidth=0.8, alpha=0.3, label="com_mun_daily")
-    ax.plot(days, total_smooth, color="#1f77b4", linewidth=1.8, label=f"total_{smooth_days}d")
-    ax.plot(days, com_smooth, color="#2ca02c", linewidth=1.8, label=f"com_mun_{smooth_days}d")
-    ax.set_title(f"Total vs com municipio ({start_str} a {end_str})")
-    ax.set_ylabel("n_focos")
-    ax.set_xlabel("day")
-    ax.legend(ncol=2, fontsize=8)
-    ax.yaxis.set_major_formatter(mticker.StrMethodFormatter("{x:,.0f}"))
+    fig, ax = plt.subplots(figsize=(13, 4.2))
+
+    # diário como “fundo”, sem entrar na legenda
+    ax.plot(days, total, linewidth=0.8, alpha=0.15, label="_nolegend_")
+    ax.plot(days, com_mun, linewidth=0.8, alpha=0.15, label="_nolegend_")
+
+    # linhas principais (interpretáveis)
+    ax.plot(days, total_smooth, linewidth=2.4, label="Total de focos")
+    ax.plot(days, com_smooth, linewidth=2.4, label="Focos com município identificado")
+
+    ax.set_title("Evolução diária de focos no Brasil")
+    _add_subtitle(
+        ax,
+        f"Período: {start_str} a {end_str} • Linha suavizada: média de {smooth_days} dias • Sem município = diferença entre as linhas",
+    )
+
+    ax.set_xlabel("Dia")
+    ax.set_ylabel("Focos por dia")
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: _fmt_int_pt(int(x))))
+    ax.legend(loc="upper left", ncol=2)
+
     fig.autofmt_xdate()
     _save_fig(plt, fig, out_path, dpi)
 
 
-def _plot_seasonality(plt, uf_rows: list[dict[str, str]], out_path: Path, dpi: int) -> None:
+def _plot_seasonality(
+    plt,
+    uf_rows: list[dict[str, str]],
+    out_path: Path,
+    dpi: int,
+) -> None:
     from matplotlib import dates as mdates
+    from matplotlib import ticker as mticker
 
     totals: dict[str, int] = {}
     monthly: dict[str, dict[dt.date, int]] = {}
@@ -191,24 +262,31 @@ def _plot_seasonality(plt, uf_rows: list[dict[str, str]], out_path: Path, dpi: i
     top_ufs = sorted(totals.items(), key=lambda item: (-item[1], item[0]))[:10]
     months = sorted({month for rows in monthly.values() for month in rows})
 
+    smooth_months = 3
+
     fig, ax = plt.subplots(figsize=(14, 6))
     for uf, _ in top_ufs:
-        series = [monthly.get(uf, {}).get(month, 0) for month in months]
-        ax.plot(months, series, linewidth=1.2, label=uf)
+        series = [float(monthly.get(uf, {}).get(month, 0)) for month in months]
+        series_smooth = _rolling_mean(series, smooth_months)
+        ax.plot(months, series_smooth, linewidth=2.0, label=uf)
 
-    ax.set_title("Sazonalidade por UF (n_focos mensal, top 10)")
-    ax.set_ylabel("n_focos")
-    ax.set_xlabel("month")
+    ax.set_title("Sazonalidade mensal de focos por UF (Top 10 no período)")
+    _add_subtitle(ax, f"Linha suavizada: média de {smooth_months} meses (para leitura)")
+
+    ax.set_ylabel("Focos por mês")
+    ax.set_xlabel("Mês")
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: _fmt_int_pt(int(x))))
+
     ax.legend(
         bbox_to_anchor=(1.02, 1),
         loc="upper left",
-        fontsize=8,
         frameon=False,
     )
-    ax.xaxis.set_major_locator(mdates.MonthLocator(interval=2))
+    ax.xaxis.set_major_locator(mdates.MonthLocator(interval=1))
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
+
     fig.autofmt_xdate()
-    _save_fig(plt, fig, out_path, dpi, rect=(0, 0, 0.8, 1))
+    _save_fig(plt, fig, out_path, dpi, rect=(0, 0, 0.82, 1))
 
 
 def _truncate_label(value: str, max_len: int) -> str:
@@ -224,7 +302,11 @@ def _plot_hotspots(
     out_path_density: Path,
     fig_top_n: int,
     dpi: int,
+    start_str: str,
+    end_str: str,
 ) -> None:
+    from matplotlib import ticker as mticker
+
     def sort_key_count(row: dict[str, str]) -> tuple:
         return (
             -_to_int(row["n_focos_total"]),
@@ -247,27 +329,147 @@ def _plot_hotspots(
         labels = []
         for row in rows:
             label = f"{row['mun_nm_mun']} ({row['mun_uf']})"
-            labels.append(_truncate_label(label, 30))
+            labels.append(_truncate_label(label, 34))
         return labels
 
+    def add_note(ax, text: str) -> None:
+        ax.text(
+            0.99,
+            0.02,
+            text,
+            transform=ax.transAxes,
+            ha="right",
+            va="bottom",
+            fontsize=10,
+            color="#333333",
+            bbox=dict(boxstyle="round,pad=0.35", facecolor="white", alpha=0.75, edgecolor="none"),
+        )
+
+    def annotate_barh(ax, values: Sequence[float]) -> None:
+        xmax = max(values) if values else 0.0
+        pad = xmax * 0.012 if xmax > 0 else 1.0
+        for i, v in enumerate(values):
+            ax.text(v + pad, i, _fmt_int_ptbr(v), va="center", ha="left", fontsize=10, color="#222222")
+
+
+    # ---------------------------
+    # hotspots por contagem
+    # ---------------------------
     labels_count = build_labels(rows_count)
     values_count = [_to_int(row["n_focos_total"]) for row in rows_count]
 
-    fig, ax = plt.subplots(figsize=(10, 7))
-    ax.barh(labels_count[::-1], values_count[::-1], color="#1f77b4")
-    ax.set_title(f"Hotspots por contagem (top {top_n})")
-    ax.set_xlabel("n_focos_total")
-    ax.set_ylabel("Municipio (UF)")
+    # count
+    fig, ax = plt.subplots(figsize=(12, 8))
+
+    # titulo centralizado no png inteiro
+    fig.suptitle(
+        "HOTSPOTS por MUNICÍPIO — maior número de focos",
+        fontsize=16,
+        fontweight="bold",
+        x=0.5,
+        y=0.98,
+        ha="center",
+    )
+
+    bars = ax.barh(
+        labels_count[::-1],
+        values_count[::-1],
+        height=0.72,
+        color="#2E6F9E",        # azul mais agradável
+        alpha=0.92,            # tira o “opaco pesado”
+        edgecolor="#1E4E70",   # borda sutil
+        linewidth=0.8,
+        zorder=2,
+    )
+
+    # sombra leve nas barras
+    import matplotlib.patheffects as pe
+    for b in bars:
+        b.set_path_effects(
+            [
+                pe.SimplePatchShadow(offset=(1.5, -1.5), alpha=0.20, shadow_rgbFace=(0, 0, 0)),
+                pe.Normal(),
+            ]
+        )
+
+    ax.set_xlabel("FOCOS")
+    ax.set_ylabel("MUNICÍPIO (UF)")
+
+    # grade só no eixo x (ajuda leitura sem poluir)
+    ax.grid(axis="x", alpha=0.25, linestyle="--", linewidth=0.7, zorder=0)
+    ax.grid(axis="y", alpha=0.0)
+
+    # observação no canto inferior direito (dentro)
+    ax.text(
+        0.995,
+        0.02,
+        f"Período: {start_str} A {end_str}  •  TOP {top_n}",
+        transform=ax.transAxes,
+        ha="right",
+        va="bottom",
+        fontsize=10,
+        color="#333333",
+    )
+
     _save_fig(plt, fig, out_path_count, dpi)
 
+
+    # ---------------------------
+    # hotspots por densidade
+    # ---------------------------
     labels_density = build_labels(rows_density)
     values_density = [_to_float(row["focos_por_100km2"]) for row in rows_density]
-    fig, ax = plt.subplots(figsize=(10, 7))
-    ax.barh(labels_density[::-1], values_density[::-1], color="#9467bd")
-    ax.set_title(f"Hotspots por densidade (top {top_n})")
-    ax.set_xlabel("focos_por_100km2")
-    ax.set_ylabel("Municipio (UF)")
+
+    fig, ax = plt.subplots(figsize=(12, 8))
+
+    fig.suptitle(
+        "HOTSPOTS por MUNICÍPIO — maior densidade de focos",
+        fontsize=16,
+        fontweight="bold",
+        x=0.5,
+        y=0.98,
+        ha="center",
+    )
+
+    bars = ax.barh(
+        labels_density[::-1],
+        values_density[::-1],
+        height=0.72,
+        color="#6A3FA0",        # roxo mais “premium”
+        alpha=0.92,
+        edgecolor="#4B2A78",
+        linewidth=0.8,
+        zorder=2,
+    )
+
+    import matplotlib.patheffects as pe
+    for b in bars:
+        b.set_path_effects(
+            [
+                pe.SimplePatchShadow(offset=(1.5, -1.5), alpha=0.20, shadow_rgbFace=(0, 0, 0)),
+                pe.Normal(),
+            ]
+        )
+
+    ax.set_xlabel("FOCOS POR 100 KM²")
+    ax.set_ylabel("MUNICÍPIO (UF)")
+
+    ax.grid(axis="x", alpha=0.25, linestyle="--", linewidth=0.7, zorder=0)
+    ax.grid(axis="y", alpha=0.0)
+
+    ax.text(
+        0.995,
+        0.02,
+        f"Período: {start_str} A {end_str}  •  TOP {top_n}  •  Densidade = focos/área",
+        transform=ax.transAxes,
+        ha="right",
+        va="bottom",
+        fontsize=10,
+        color="#333333",
+    )
+
     _save_fig(plt, fig, out_path_density, dpi)
+
 
 
 def _plot_shifts(
@@ -291,13 +493,23 @@ def _plot_shifts(
     labels = [row["uf"] for row in rows]
     values = [_to_int(row["delta_abs"]) for row in rows]
 
-    fig, ax = plt.subplots(figsize=(10, 7))
-    ax.barh(labels[::-1], values[::-1], color="#ff7f0e")
-    ax.axvline(0, color="#333333", linewidth=0.8)
-    ax.set_title(f"Variacao por UF (Q1 vs Q4, {window_days}d) ({start_str} a {end_str})")
-    ax.set_xlabel("Delta absoluto (Q4 - Q1)")
-    ax.set_ylabel("uf")
-    ax.xaxis.set_major_formatter(mticker.StrMethodFormatter("{x:,.0f}"))
+    # cor por sinal ajuda leitura “bateu o olho”
+    colors = ["#1f77b4" if v >= 0 else "#d62728" for v in values]
+
+    fig, ax = plt.subplots(figsize=(11, 7.2))
+    ax.barh(labels[::-1], values[::-1], color=colors[::-1])
+    ax.axvline(0, color="#333333", linewidth=0.9)
+
+    ax.set_title("Mudança de focos por UF (início vs fim do período)")
+    _add_subtitle(
+        ax,
+        f"Comparação: primeiros {window_days} dias vs últimos {window_days} dias • Valor positivo = aumentou",
+    )
+
+    ax.set_xlabel("Diferença de focos (últimos − primeiros)")
+    ax.set_ylabel("UF")
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: _fmt_int_pt(int(x))))
+
     _save_fig(plt, fig, out_path, dpi)
 
 
@@ -337,7 +549,9 @@ def run_make_figures(
 
     plt = _get_pyplot()
     _apply_style(plt, dpi)
+
     window_days = min(90, (_parse_date(end_str) - _parse_date(start_str)).days + 1)
+
     quality_rows = _read_csv(analytics_dir / "quality_daily.csv")
     seasonality_rows = _read_csv(analytics_dir / "seasonality_uf.csv")
     hotspots_rows = _read_csv(analytics_dir / "hotspots_mun_period.csv")
@@ -374,7 +588,10 @@ def run_make_figures(
         figures_dir / "hotspots_top_density.png",
         fig_top_n,
         dpi,
+        start_str,
+        end_str,
     )
+
     _plot_shifts(
         plt,
         shifts_rows,
