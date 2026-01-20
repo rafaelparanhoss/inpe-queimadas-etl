@@ -60,9 +60,16 @@ def ensure_database(timeout_sec: int = 60, interval_sec: float = 2.0) -> None:
                 raise TimeoutError("pg_isready timed out")
             time.sleep(interval_sec)
 
-    role_exists = _psql_scalar(
-        container, f"select 1 from pg_roles where rolname = '{db_user}';"
-    )
+    while True:
+        try:
+            role_exists = _psql_scalar(
+                container, f"select 1 from pg_roles where rolname = '{db_user}';"
+            )
+            break
+        except subprocess.CalledProcessError:
+            if time.time() >= deadline:
+                raise
+            time.sleep(interval_sec)
     if role_exists == "1":
         log.info("[db_bootstrap] role exists")
     else:
