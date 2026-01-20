@@ -19,6 +19,7 @@ from .marts_runner import run_marts
 from .ref_runner import run_ref
 from .reprocess import run_reprocess
 from .report import run_report
+from .report_range import run_report_range
 from .today import run_today
 
 try:
@@ -137,6 +138,10 @@ def cmd_report(date_str: str) -> None:
     run_report(_validate_date(date_str))
 
 
+def cmd_report_range(start_str: str, end_str: str) -> None:
+    run_report_range(_validate_date(start_str), _validate_date(end_str))
+
+
 def cmd_reprocess(date_str: str, dry_run: bool) -> None:
     run_reprocess(_validate_date(date_str), dry_run)
 
@@ -182,6 +187,10 @@ def _build_parser() -> argparse.ArgumentParser:
     report = sub.add_parser("report", help="generate report for a date")
     report.add_argument("--date", help="date in YYYY-MM-DD", required=True)
 
+    report_range = sub.add_parser("report-range", help="generate report for a date range")
+    report_range.add_argument("--start", help="start date in YYYY-MM-DD", required=True)
+    report_range.add_argument("--end", help="end date in YYYY-MM-DD", required=True)
+
     reprocess = sub.add_parser("reprocess", help="reprocess a date")
     reprocess.add_argument("--date", help="date in YYYY-MM-DD", required=True)
     reprocess.add_argument("--dry-run", action="store_true", help="print actions only")
@@ -222,6 +231,8 @@ def main(argv: list[str] | None = None) -> None:
             run_marts(_validate_date(args.date))
         elif args.command == "report":
             cmd_report(args.date)
+        elif args.command == "report-range":
+            cmd_report_range(args.start, args.end)
         elif args.command == "reprocess":
             cmd_reprocess(args.date, args.dry_run)
         elif args.command == "run":
