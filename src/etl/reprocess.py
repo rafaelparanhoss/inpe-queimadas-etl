@@ -10,6 +10,8 @@ from pathlib import Path
 import psycopg
 
 from .config import settings
+from .enrich_runner import run_enrich
+from .marts_runner import run_marts
 
 
 def _ts() -> str:
@@ -22,32 +24,6 @@ def _log(message: str) -> None:
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
-
-
-def _find_bash() -> str:
-    if os.name == "nt":
-        candidates = [
-            r"C:\Program Files\Git\bin\bash.exe",
-            r"C:\Program Files (x86)\Git\bin\bash.exe",
-        ]
-        for candidate in candidates:
-            if Path(candidate).exists():
-                return candidate
-
-    bash = shutil.which("bash")
-    if bash:
-        if os.name != "nt":
-            return bash
-        if "system32\\bash.exe" not in bash.lower():
-            return bash
-
-    raise FileNotFoundError("bash not found on PATH")
-
-
-def _run_script(script: Path, args: list[str]) -> None:
-    bash = _find_bash()
-    cmd = [bash, str(script), *args]
-    subprocess.run(cmd, check=True, cwd=_repo_root())
 
 
 def _run_cli(date_str: str) -> None:
@@ -196,10 +172,10 @@ select
     _run_cli(date_str)
 
     _log("run enrich")
-    _run_script(_repo_root() / "scripts" / "run_enrich.sh", ["--date", date_str])
+    run_enrich(date_str)
 
     _log("run marts")
-    _run_script(_repo_root() / "scripts" / "run_marts.sh", ["--date", date_str])
+    run_marts(date_str)
 
     _log("final checks")
     with _connect() as conn, conn.cursor() as cur:
