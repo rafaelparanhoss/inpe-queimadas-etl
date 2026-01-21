@@ -50,6 +50,7 @@ from ref.ibge_municipios m
 where f.mun_cd_mun is null
   and f.file_date = :'DATE'::date
   and f.geom is not null
+  and m.geom is not null
   and st_intersects(f.geom, m.geom);
 
 update curated.inpe_focos_enriched f
@@ -62,9 +63,11 @@ from ref.ibge_municipios m
 where f.mun_cd_mun is null
   and f.file_date = :'DATE'::date
   and f.geom is not null
+  and m.geom is not null
   and m.cd_mun = (
     select m2.cd_mun
     from ref.ibge_municipios m2
+    where m2.geom is not null
     order by m2.geom <-> f.geom
     limit 1
   )
