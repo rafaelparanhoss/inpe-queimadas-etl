@@ -42,16 +42,6 @@ jobs:
           uv sync
           uv pip install -e .
 
-      - name: make scripts executable
-        run: |
-          chmod +x scripts/*.sh
-          if [ -f ./run_today.sh ]; then
-            chmod +x ./run_today.sh
-          fi
-          if [ -f ./report_day.sh ]; then
-            chmod +x ./report_day.sh
-          fi
-
       - name: resolve date
         id: run_date
         run: |

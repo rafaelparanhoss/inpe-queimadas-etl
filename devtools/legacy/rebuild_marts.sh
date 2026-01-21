@@ -39,3 +39,5 @@ while IFS= read -r day; do
 done <<< "$dates"
 
 log "done | dates=${count}"
+
+

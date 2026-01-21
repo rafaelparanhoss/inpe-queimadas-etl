@@ -34,7 +34,8 @@ Tabelas:
 - `sql/ref`: schemas e tabelas de referência
 - `sql/enrich`: enriquecimento espacial
 - `sql/marts`: tabelas analíticas
-- `scripts`: automações de execução
+- `scripts`: wrapper opcional (`run.sh`)
+- `devtools/legacy`: wrappers antigos (opcional)
 
 ## Como rodar
 
@@ -50,7 +51,7 @@ uv pip install -e .
 ```
 
 ### 2.1) Comandos oficiais (python)
-Os comandos python sao os oficiais. Os scripts em `scripts/*.sh` sao wrappers compat.
+Os comandos python sao os oficiais. `scripts/run.sh` e opcional.
 ```bash
 uv run python -m etl.app run --date 2026-01-18 --checks
 uv run python -m etl.app report --date 2026-01-18
@@ -109,8 +110,8 @@ Outputs (data/reports/range_<start>_<end>/):
 
 ### 3) Rodar tudo (ref -> ingestao INPE -> enrich -> marts)
 ```bash
-scripts/run_all.sh --date 2026-01-18
-scripts/run_all.sh --date 2026-01-18 --checks
+uv run python -m etl.app run --date 2026-01-18
+uv run python -m etl.app run --date 2026-01-18 --checks
 ```
 
 ### 3.1) Teste manual (race)
@@ -122,14 +123,14 @@ python -m uv run python -m etl.app ref
 
 ### 4) Rodar etapas isoladas
 ```bash
-scripts/run_ref.sh
-scripts/run_enrich.sh --date 2026-01-18
-scripts/run_marts.sh --date 2026-01-18
+uv run python -m etl.app ref
+uv run python -m etl.app enrich --date 2026-01-18
+uv run python -m etl.app marts --date 2026-01-18
 ```
 
-### 5) Rebuild total (marts)
+### 5) Rebuild total (marts) (legacy)
 ```bash
-scripts/rebuild_marts.sh
+devtools/legacy/rebuild_marts.sh
 ```
 
 ### 6) Exemplo de validacoes
@@ -141,14 +142,14 @@ docker exec -it geoetl_postgis psql -U geoetl -d geoetl -c "select count(*) - co
 
 ### 7) Reprocessar um dia
 ```bash
-scripts/reprocess_day.sh --date 2026-01-18
-scripts/reprocess_day.sh --date 2026-01-18 --dry-run
+uv run python -m etl.app reprocess --date 2026-01-18
+uv run python -m etl.app reprocess --date 2026-01-18 --dry-run
 ```
 
 ### 8) Smoke checks
 ```bash
-scripts/checks.sh
-scripts/checks.sh --date 2026-01-18
+uv run python -m etl.app checks
+uv run python -m etl.app checks --date 2026-01-18
 ```
 
 ### 9) OK esperado (reprocess)
@@ -158,13 +159,13 @@ raw_n=curated_n e marts_day_sum=curated_n
 
 ### 10) Rodar hoje
 ```bash
-scripts/run_today.sh
-scripts/run_today.sh --date 2026-01-18
+uv run python -m etl.app today
+uv run python -m etl.app today --date 2026-01-18
 ```
 
 ### 11) Gerar report de um dia
 ```bash
-scripts/report_day.sh --date 2026-01-18
+uv run python -m etl.app report --date 2026-01-18
 ```
 
 ### 12) GitHub Actions (artifacts)
@@ -175,7 +176,7 @@ Arquivo gerado em `data/logs/etl.log`.
 
 ## Configuração
 Arquivo `.env` (não versionado). Use `.env.example` como referência.
-Para scripts, use `.env.local` (ver `.env.local.example`).
+Para wrappers legacy, use `.env.local` (ver `.env.local.example`).
 Env vars extras:
 - `INPE_MONTHLY_BASE_URL`
 - `INPE_RETENTION_DAYS`
