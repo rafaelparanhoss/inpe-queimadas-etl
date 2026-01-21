@@ -61,6 +61,14 @@ def _ensure_gist_index(cur: psycopg.Cursor, table: str, index_name: str) -> bool
     return True
 
 
+def _ensure_btree_index(cur: psycopg.Cursor, table: str, index_name: str, column: str) -> bool:
+    if not _table_exists(cur, table):
+        log.info("skip index | table missing | table=%s", table)
+        return False
+    cur.execute(f"create index if not exists {index_name} on {table} ({column});")
+    return True
+
+
 def _analyze(cur: psycopg.Cursor, table: str) -> None:
     if not _table_exists(cur, table):
         log.info("skip analyze | table missing | table=%s", table)
@@ -75,14 +83,19 @@ def _ensure_postprocess_prereqs() -> None:
         ("ref.tis_4326", "idx_ref_tis_4326_geom"),
         ("curated.inpe_focos_enriched", "idx_curated_inpe_focos_enriched_geom"),
     ]
+    date_index = ("curated.inpe_focos_enriched", "idx_curated_inpe_focos_enriched_file_date", "file_date")
 
     with _connect() as conn, conn.cursor() as cur:
         for table, index_name in targets:
             created = _ensure_gist_index(cur, table, index_name)
             if created:
                 log.info("index ok | table=%s | index=%s", table, index_name)
+        created = _ensure_btree_index(cur, *date_index)
+        if created:
+            log.info("index ok | table=%s | index=%s", date_index[0], date_index[1])
         for table, _ in targets:
             _analyze(cur, table)
+        _analyze(cur, date_index[0])
         conn.commit()
 
 
