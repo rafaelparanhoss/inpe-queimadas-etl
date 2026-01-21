@@ -53,6 +53,18 @@ def _table_exists(cur: psycopg.Cursor, name: str) -> bool:
     return cur.fetchone()[0] is not None
 
 
+def _rename_table_if_needed(cur: psycopg.Cursor, old_name: str, new_name: str) -> None:
+    if _table_exists(cur, new_name):
+        return
+    if not _table_exists(cur, old_name):
+        log.info("skip rename | table missing | table=%s", old_name)
+        return
+    schema, table = old_name.split(".", 1)
+    new_table = new_name.split(".", 1)[1]
+    cur.execute(f"alter table {schema}.{table} rename to {new_table};")
+    log.info("rename table | from=%s | to=%s", old_name, new_name)
+
+
 def _ensure_gist_index(cur: psycopg.Cursor, table: str, index_name: str) -> bool:
     if not _table_exists(cur, table):
         log.info("skip index | table missing | table=%s", table)
@@ -86,6 +98,9 @@ def _ensure_postprocess_prereqs() -> None:
     date_index = ("curated.inpe_focos_enriched", "idx_curated_inpe_focos_enriched_file_date", "file_date")
 
     with _connect() as conn, conn.cursor() as cur:
+        _rename_table_if_needed(cur, "ref.biomas", "ref.biomas_4326")
+        _rename_table_if_needed(cur, "ref.ucs", "ref.ucs_4326")
+        _rename_table_if_needed(cur, "ref.tis", "ref.tis_4326")
         for table, index_name in targets:
             created = _ensure_gist_index(cur, table, index_name)
             if created:
