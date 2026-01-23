@@ -1,0 +1,27 @@
+version: "3.8"
+
+services:
+  superset:
+    image: apache/superset:3.1.1
+    container_name: geoetl_superset
+    restart: unless-stopped
+    ports:
+      - "8088:8088"
+    environment:
+      SUPERSET_SECRET_KEY: "change-this-secret"
+      SUPERSET_LOAD_EXAMPLES: "no"
+      SUPERSET_ENV: production
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - superset_home:/app/superset_home
+    command: >
+      /bin/sh -c "
+      superset db upgrade &&
+      superset fab create-admin --username admin --password admin --firstname Admin --lastname User --email admin@example.com || true &&
+      superset init &&
+      superset run -h 0.0.0.0 -p 8088
+      "
+
+volumes:
+  superset_home:

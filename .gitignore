@@ -7,3 +7,5 @@ data/
 *.egg-info/
 *.log
 audit/
+logs/*
+!logs/.gitkeep

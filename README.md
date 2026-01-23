@@ -108,6 +108,54 @@ Outputs (data/reports/range_<start>_<end>/):
 - mun_period.csv
 - mun_monthly_top.csv
 
+## Dashboard-ready datasets
+Views (geo):
+- `marts.geo_focos_diario_municipio` (day, uf, cd_mun, nm_mun, n_focos, geom, area_km2)
+- `marts.geo_focos_diario_uf` (day, uf, cd_mun, nm_mun, n_focos, geom, area_km2)
+
+Sanity checks (pgadmin):
+```sql
+select count(*) as n
+from marts.focos_diario_municipio
+where day between '2025-08-01'::date and '2025-08-31'::date;
+
+select count(*) as n
+from marts.geo_focos_diario_municipio
+where day between '2025-08-01'::date and '2025-08-31'::date;
+
+select day, uf, cd_mun, nm_mun, n_focos, area_km2
+from marts.geo_focos_diario_municipio
+limit 5;
+
+select day, uf, cd_mun, nm_mun, n_focos, area_km2
+from marts.geo_focos_diario_uf
+limit 5;
+```
+
+Atualizacao incremental:
+```bash
+uv run python -m etl.app postprocess-range --start YYYY-MM-DD --end YYYY-MM-DD
+```
+
+### Superset (local scaffold)
+```bash
+cd dash/superset
+docker compose up -d
+```
+Login: http://localhost:8088 (admin / admin).
+
+Conexao com Postgres (Data > Databases):
+```
+postgresql+psycopg2://geoetl:geoetl@host.docker.internal:5432/geoetl
+```
+Datasets sugeridos:
+- `marts.geo_focos_diario_municipio`
+- `marts.geo_focos_diario_uf`
+- `marts.focos_diario_municipio`
+- `marts.focos_diario_uf`
+- `marts.focos_mensal_municipio`
+- `marts.focos_mensal_uf`
+
 ### 3) Rodar tudo (ref -> ingestao INPE -> enrich -> marts)
 ```bash
 uv run python -m etl.app run --date 2026-01-18
