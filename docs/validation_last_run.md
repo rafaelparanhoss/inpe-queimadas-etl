@@ -1,6 +1,6 @@
 # validation last run
 
-timestamp_utc: 2026-02-06T20:03:03.023428Z
+timestamp_utc: 2026-02-06T20:43:34.343241Z
 
 marts:
 - applied: 0
@@ -32,5 +32,3 @@ last_day_counts:
 
 status:
 - ok: true
-
-TODO: restore/regen sqlm/marts/aux/031_uf_poly_day_full.sql (was blocking git add on Windows)
