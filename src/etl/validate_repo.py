@@ -27,17 +27,17 @@ REQUIRED_SQL_FILES = [
     "sqlm/ref_core/01_ref_schema.sql",
     "sqlm/ref_core/05_ref_uf_area.sql",
     "sqlm/ref_core/10_ref_geo_prepare.sql",
-    "sqlm/enrich/20_enrich_municipio.sql",
     "sqlm/marts/prereq/010_mv_uf_geom_mainland.sql",
     "sqlm/marts/prereq/020_mv_uf_mainland_poly_noholes.sql",
     "sqlm/marts/prereq/030_mv_uf_polycoords_polygon_superset.sql",
-    "sqlm/marts/core/10_focos_diario_municipio.sql",
-    "sqlm/marts/core/20_focos_diario_uf.sql",
     "sqlm/marts/canonical/040_v_chart_uf_choropleth_day.sql",
     "sqlm/marts/canonical/050_v_chart_mun_choropleth_day.sql",
     "sqlm/marts/canonical/055_v_focos_enriched_full.sql",
     "sqlm/marts/canonical/060_v_chart_focos_scatter.sql",
     "sqlm/marts/canonical/065_mv_focos_day_dim.sql",
+    "sql/enrich/20_enrich_municipio.sql",
+    "sql/marts/10_focos_diario_municipio.sql",
+    "sql/marts/20_focos_diario_uf.sql",
     "sql/checks/010_superset_uf_choropleth.sql",
     "sql/checks/020_superset_mun_choropleth.sql",
     "sql/checks/030_superset_scatter.sql",
@@ -93,6 +93,13 @@ def _check_git_dir_writable(repo_root: Path) -> tuple[bool, str | None]:
         return False, ".git directory not found"
     if not os.access(git_dir, os.W_OK):
         return False, ".git directory is not writable"
+    return True, None
+
+
+def _check_index_lock_state(repo_root: Path) -> tuple[bool, str | None]:
+    lock_path = repo_root / ".git" / "index.lock"
+    if lock_path.exists():
+        return False, f"index.lock present at {lock_path.as_posix()}"
     return True, None
 
 
@@ -186,6 +193,15 @@ def run_validation(check_git: bool = True) -> RepoValidation:
         log.info("dir ok | %s | sql_count=%s", rel_dir, len(sql_files))
 
     if check_git and platform.system().lower().startswith("win"):
+        lock_ok, lock_err = _check_index_lock_state(repo_root)
+        if not lock_ok:
+            stats.git_dry_run_ok = False
+            kind, hint = _classify_git_failure(lock_err)
+            stats.git_failure_kind = kind
+            stats.git_failure_detail = lock_err
+            log.error("git lock check | fail | kind=%s | %s", kind, lock_err)
+            log.error("git lock hint | %s", hint)
+
         writable, writable_err = _check_git_dir_writable(repo_root)
         if not writable:
             stats.git_dry_run_ok = False
@@ -214,7 +230,13 @@ def run_validation(check_git: bool = True) -> RepoValidation:
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="validate repo sql files and windows git behavior")
-    parser.add_argument("--no-git-dry-run", action="store_true", help="skip git add dry-run check")
+    parser.add_argument(
+        "--git-check",
+        choices=["strict", "warn", "off"],
+        default="strict",
+        help="strict: fail on git dry-run issues; warn: report but do not fail; off: skip git check",
+    )
+    parser.add_argument("--no-git-dry-run", action="store_true", help="deprecated alias for --git-check off")
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -222,7 +244,8 @@ def main(argv: list[str] | None = None) -> None:
         format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     )
 
-    stats = run_validation(check_git=not args.no_git_dry_run)
+    git_mode = "off" if args.no_git_dry_run else args.git_check
+    stats = run_validation(check_git=(git_mode != "off"))
     log.info(
         "summary | sql_checked=%s | sql_failed=%s | dirs_checked=%s | dirs_failed=%s | git_dry_run_ok=%s | git_failure_kind=%s",
         stats.sql_checked,
@@ -232,7 +255,12 @@ def main(argv: list[str] | None = None) -> None:
         stats.git_dry_run_ok,
         stats.git_failure_kind,
     )
-    if stats.sql_failed or stats.dirs_failed or not stats.git_dry_run_ok:
+    git_failed = not stats.git_dry_run_ok
+    if git_mode == "warn" and git_failed:
+        log.warning("git check failed but mode=warn, continuing without failure")
+        git_failed = False
+
+    if stats.sql_failed or stats.dirs_failed or git_failed:
         raise SystemExit(1)
 
 

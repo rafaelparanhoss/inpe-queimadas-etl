@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import logging
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -35,6 +36,46 @@ def _first_col(row: tuple[Any, ...] | None) -> Any | None:
     if row is None or len(row) == 0:
         return None
     return row[0]
+
+
+def _requires_date(path: Path) -> bool:
+    text = path.read_text(encoding="utf-8", errors="ignore")
+    return (":'DATE'" in text) or bool(re.search(r":DATE\\b", text))
+
+
+def _merge_stats(parts: list[ApplyStats]) -> ApplyStats:
+    merged = ApplyStats()
+    for part in parts:
+        merged.applied += part.applied
+        merged.skipped_date += part.skipped_date
+        merged.skipped_dry += part.skipped_dry
+        merged.skipped_stub += part.skipped_stub
+        merged.failed += part.failed
+    return merged
+
+
+def _apply_files(
+    files: list[Path],
+    vars_dict: dict[str, str] | None,
+    dry_run: bool,
+    engine: str | None,
+    dsn: str | None,
+) -> ApplyStats:
+    stats = ApplyStats()
+    for file in files:
+        if not file.exists():
+            raise FileNotFoundError(f"missing sql file: {file}")
+        if _requires_date(file) and (not vars_dict or "DATE" not in vars_dict):
+            logging.getLogger("apply_sql").info("skip sql | missing var DATE | path=%s", file.name)
+            stats.skipped_date += 1
+            continue
+        if dry_run:
+            logging.getLogger("apply_sql").info("dry-run | would apply | path=%s", file.name)
+            stats.skipped_dry += 1
+            continue
+        run_sql_file(str(file), vars_dict, engine=engine, dsn=dsn)
+        stats.applied += 1
+    return stats
 
 
 def _write_report(stats_marts, stats_checks, check_results, counts) -> Path:
@@ -191,22 +232,35 @@ def main(argv: list[str] | None = None) -> None:
         log.info("apply minimal | enabled")
 
     engine = None if args.engine == "auto" else args.engine
-    minimal_marts_dirs = [
-        repo_root / "sqlm" / "marts" / "prereq",
-        repo_root / "sqlm" / "marts" / "core",
-        repo_root / "sqlm" / "marts" / "canonical",
-    ]
-    stats_marts = apply_dirs(
+    stats_ref_core = apply_dirs(
+        [repo_root / "sqlm" / "ref_core"],
+        vars_dict,
+        args.dry_run,
+        engine=engine,
+        dsn=args.dsn,
+    )
+    stats_runtime_core = _apply_files(
         [
-            repo_root / "sqlm" / "ref_core",
-            repo_root / "sqlm" / "enrich",
-            *minimal_marts_dirs,
+            repo_root / "sql" / "enrich" / "20_enrich_municipio.sql",
+            repo_root / "sql" / "marts" / "10_focos_diario_municipio.sql",
+            repo_root / "sql" / "marts" / "20_focos_diario_uf.sql",
         ],
         vars_dict,
         args.dry_run,
         engine=engine,
         dsn=args.dsn,
     )
+    stats_dash_core = apply_dirs(
+        [
+            repo_root / "sqlm" / "marts" / "prereq",
+            repo_root / "sqlm" / "marts" / "canonical",
+        ],
+        vars_dict,
+        args.dry_run,
+        engine=engine,
+        dsn=args.dsn,
+    )
+    stats_marts = _merge_stats([stats_ref_core, stats_runtime_core, stats_dash_core])
     check_results, stats_checks = _run_checks(
         repo_root / "sql" / "checks",
         vars_dict,

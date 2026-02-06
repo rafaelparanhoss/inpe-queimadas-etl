@@ -11,26 +11,16 @@ import sys
 from pathlib import Path
 
 from .config import settings
-from .analytics_range import run_analytics_range
 from .backfill import run_backfill
 from .checks import run_checks
 from .db_bootstrap import ensure_database
 from .enrich_runner import run_enrich
 from .marts_runner import run_marts
 from .ref_runner import run_ref
-from .reprocess import run_reprocess
-from .report import run_report
 from . import validate_marts
-from .report_range import run_report_range
-from .postprocess_range import run_postprocess_range
-from .today import run_today
 
 import psycopg
 from psycopg import sql as psql
-try:
-    from zoneinfo import ZoneInfo
-except Exception:  # pragma: no cover
-    ZoneInfo = None  # type: ignore[assignment]
 
 _filename = Path(__file__).stem
 log = logging.getLogger(_filename)
@@ -125,46 +115,10 @@ def _validate_date(date_str: str) -> str:
         raise ValueError(f"invalid --date format: {date_str} (expected YYYY-MM-DD)")
     return date_str
 
-
-def _resolve_today(date_str: str | None) -> str:
-    if date_str:
-        return _validate_date(date_str)
-
-    if ZoneInfo is not None:
-        try:
-            tz = ZoneInfo("America/Sao_Paulo")
-            return dt.datetime.now(tz).date().isoformat()
-        except Exception:
-            pass
-
-    return dt.date.today().isoformat()
-
-
 def cmd_checks(date_str: str | None) -> None:
     if date_str:
         date_str = _validate_date(date_str)
     run_checks(date_str)
-
-
-def cmd_report(date_str: str) -> None:
-    run_report(_validate_date(date_str))
-
-
-def cmd_report_range(start_str: str, end_str: str) -> None:
-    run_report_range(_validate_date(start_str), _validate_date(end_str))
-
-
-def cmd_postprocess_range(start_str: str, end_str: str, resume: bool, engine: str | None) -> None:
-    run_postprocess_range(
-        _validate_date(start_str),
-        _validate_date(end_str),
-        resume,
-        engine=engine,
-    )
-
-
-def cmd_reprocess(date_str: str, dry_run: bool, engine: str | None) -> None:
-    run_reprocess(_validate_date(date_str), dry_run, engine=engine)
 
 
 def _drop_schemas(
@@ -367,49 +321,6 @@ def cmd_run(
         run_checks(date_str)
 
 
-def cmd_today(date_str: str | None, engine: str | None, checks: bool) -> None:
-    resolved = _resolve_today(date_str)
-    run_today(resolved, engine=engine, checks=checks)
-
-
-def cmd_analytics_range(
-    start_str: str,
-    end_str: str,
-    out_dir: str | None,
-    top_n: int,
-    shifts_top: int,
-    shifts_sort: str,
-) -> None:
-    run_analytics_range(
-        _validate_date(start_str),
-        _validate_date(end_str),
-        out_dir,
-        top_n,
-        shifts_top,
-        shifts_sort,
-    )
-
-
-def cmd_make_figures(
-    start_str: str,
-    end_str: str,
-    out_dir: str | None,
-    fig_top_n: int,
-    dpi: int,
-    smooth_days: int,
-) -> None:
-    from .viz.make_figures import run_make_figures
-
-    run_make_figures(
-        _validate_date(start_str),
-        _validate_date(end_str),
-        out_dir,
-        fig_top_n,
-        dpi,
-        smooth_days,
-    )
-
-
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="etl command runner")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -429,32 +340,6 @@ def _build_parser() -> argparse.ArgumentParser:
     checks.add_argument("--date", help="date in YYYY-MM-DD", required=False)
     checks.add_argument("--engine", choices=["docker", "direct", "auto"], default="auto")
 
-    analytics_range = sub.add_parser("analytics-range", help="generate analytics for a date range")
-    analytics_range.add_argument("--start", help="start date in YYYY-MM-DD", required=True)
-    analytics_range.add_argument("--end", help="end date in YYYY-MM-DD", required=True)
-    analytics_range.add_argument("--out", help="output directory", required=False)
-    analytics_range.add_argument("--top-n", help="top N for hotspots", type=int, default=100)
-    analytics_range.add_argument(
-        "--shifts-top",
-        help="top N shifts (default 27)",
-        type=int,
-        default=27,
-    )
-    analytics_range.add_argument(
-        "--shifts-sort",
-        help="sort shifts by abs or pct",
-        choices=["abs", "pct"],
-        default="abs",
-    )
-
-    make_figures = sub.add_parser("make-figures", help="generate figures from analytics packs")
-    make_figures.add_argument("--start", help="start date in YYYY-MM-DD", required=True)
-    make_figures.add_argument("--end", help="end date in YYYY-MM-DD", required=True)
-    make_figures.add_argument("--out", help="output directory", required=False)
-    make_figures.add_argument("--fig-top-n", help="top N for hotspots figures", type=int, default=20)
-    make_figures.add_argument("--dpi", help="output dpi", type=int, default=200)
-    make_figures.add_argument("--smooth-days", help="rolling mean days", type=int, default=7)
-
     enrich = sub.add_parser("enrich", help="run enrich sql for a date")
     enrich.add_argument("--date", help="date in YYYY-MM-DD", required=True)
     enrich.add_argument("--engine", choices=["docker", "direct", "auto"], default="auto")
@@ -462,27 +347,6 @@ def _build_parser() -> argparse.ArgumentParser:
     marts = sub.add_parser("marts", help="run marts sql for a date")
     marts.add_argument("--date", help="date in YYYY-MM-DD", required=True)
     marts.add_argument("--engine", choices=["docker", "direct", "auto"], default="auto")
-
-    report = sub.add_parser("report", help="generate report for a date")
-    report.add_argument("--date", help="date in YYYY-MM-DD", required=True)
-
-    report_range = sub.add_parser("report-range", help="generate report for a date range")
-    report_range.add_argument("--start", help="start date in YYYY-MM-DD", required=True)
-    report_range.add_argument("--end", help="end date in YYYY-MM-DD", required=True)
-
-    postprocess_range = sub.add_parser(
-        "postprocess-range",
-        help="run enrich and marts for a date range",
-    )
-    postprocess_range.add_argument("--start", help="start date in YYYY-MM-DD", required=True)
-    postprocess_range.add_argument("--end", help="end date in YYYY-MM-DD", required=True)
-    postprocess_range.add_argument("--resume", action="store_true", help="resume from state file")
-    postprocess_range.add_argument("--engine", choices=["docker", "direct", "auto"], default="auto")
-
-    reprocess = sub.add_parser("reprocess", help="reprocess a date")
-    reprocess.add_argument("--date", help="date in YYYY-MM-DD", required=True)
-    reprocess.add_argument("--dry-run", action="store_true", help="print actions only")
-    reprocess.add_argument("--engine", choices=["docker", "direct", "auto"], default="auto")
 
     reset = sub.add_parser("reset", help="drop schemas and clear local state")
     reset.add_argument("--engine", choices=["docker", "direct", "auto"], default="auto")
@@ -503,12 +367,6 @@ def _build_parser() -> argparse.ArgumentParser:
     run.add_argument("--checks", action="store_true", help="run checks after")
     run.add_argument("--mode", choices=["dashboard", "full"], default="dashboard")
     run.add_argument("--engine", choices=["docker", "direct", "auto"], default="auto")
-
-    today = sub.add_parser("today", help="run for today")
-    today.add_argument("--date", help="date in YYYY-MM-DD", required=False)
-    today.add_argument("--engine", choices=["docker", "direct", "auto"], default="auto")
-    today.add_argument("--checks", dest="checks", action="store_true", default=True, help="run checks/report")
-    today.add_argument("--no-checks", dest="checks", action="store_false", help="skip checks/report")
 
     return parser
 
@@ -535,31 +393,10 @@ def main(argv: list[str] | None = None) -> None:
             )
         elif args.command == "checks":
             cmd_checks(args.date)
-        elif args.command == "analytics-range":
-            cmd_analytics_range(args.start, args.end, args.out, args.top_n, args.shifts_top, args.shifts_sort)
-        elif args.command == "make-figures":
-            cmd_make_figures(args.start, args.end, args.out, args.fig_top_n, args.dpi, args.smooth_days)
         elif args.command == "enrich":
             run_enrich(_validate_date(args.date), engine=None if args.engine == "auto" else args.engine)
         elif args.command == "marts":
             run_marts(_validate_date(args.date), engine=None if args.engine == "auto" else args.engine)
-        elif args.command == "report":
-            cmd_report(args.date)
-        elif args.command == "report-range":
-            cmd_report_range(args.start, args.end)
-        elif args.command == "postprocess-range":
-            cmd_postprocess_range(
-                args.start,
-                args.end,
-                args.resume,
-                engine=None if args.engine == "auto" else args.engine,
-            )
-        elif args.command == "reprocess":
-            cmd_reprocess(
-                args.date,
-                args.dry_run,
-                engine=None if args.engine == "auto" else args.engine,
-            )
         elif args.command == "run":
             cmd_run(
                 args.date,
@@ -585,12 +422,6 @@ def main(argv: list[str] | None = None) -> None:
                 _reset_state_files()
             if args.clear_raw_cache:
                 _clear_raw_cache()
-        elif args.command == "today":
-            cmd_today(
-                args.date,
-                engine=None if args.engine == "auto" else args.engine,
-                checks=bool(args.checks),
-            )
         else:
             parser.error(f"unknown command: {args.command}")
     except Exception as exc:
