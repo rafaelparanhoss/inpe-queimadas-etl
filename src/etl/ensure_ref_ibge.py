@@ -7,6 +7,8 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
+import psycopg
+
 
 def _log(message: str) -> None:
     print(f"[ensure_ref_ibge] {message}", flush=True)
@@ -148,7 +150,44 @@ def _run_ogr2ogr(
         raise RuntimeError(result.stderr.strip() or "ogr2ogr failed")
 
 
-def ensure_ref_ibge() -> None:
+def _detect_engine(engine: str | None) -> str:
+    if engine:
+        if engine not in ("docker", "direct"):
+            raise ValueError(f"invalid engine: {engine}")
+        return engine
+    if os.getenv("DOCKER_CONTAINER") or os.getenv("DB_CONTAINER"):
+        return "docker"
+    return "direct"
+
+
+def _direct_check() -> None:
+    conn = psycopg.connect(
+        host=os.getenv("DB_HOST", "localhost"),
+        port=os.getenv("DB_PORT", "5432"),
+        dbname=os.getenv("DB_NAME", "geoetl"),
+        user=os.getenv("DB_USER", "geoetl"),
+        password=os.getenv("DB_PASSWORD", "geoetl"),
+    )
+    with conn, conn.cursor() as cur:
+        cur.execute("select to_regclass('ref.ibge_municipios');")
+        if cur.fetchone()[0] is None:
+            raise RuntimeError(
+                "ref.ibge_municipios missing; load it first or run with --engine docker"
+            )
+        cur.execute("select count(*) from ref.ibge_municipios;")
+        count = int(cur.fetchone()[0] or 0)
+        if count < 5000:
+            raise RuntimeError(
+                f"ref.ibge_municipios count too low ({count}); load it first"
+            )
+
+
+def ensure_ref_ibge(engine: str | None = None) -> None:
+    engine = _detect_engine(engine)
+    if engine == "direct":
+        _direct_check()
+        _log("ok (direct)")
+        return
     repo_root = _repo_root()
     data_dir = repo_root / "data" / "ref" / "ibge_municipios"
     zip_name = "BR_Municipios_2022.zip"

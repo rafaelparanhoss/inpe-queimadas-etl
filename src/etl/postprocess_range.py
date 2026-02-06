@@ -114,7 +114,12 @@ def _ensure_postprocess_prereqs() -> None:
         conn.commit()
 
 
-def run_postprocess_range(start_str: str, end_str: str, resume: bool) -> None:
+def run_postprocess_range(
+    start_str: str,
+    end_str: str,
+    resume: bool,
+    engine: str | None = None,
+) -> None:
     start = date.fromisoformat(start_str)
     end = date.fromisoformat(end_str)
     if start > end:
@@ -144,7 +149,7 @@ def run_postprocess_range(start_str: str, end_str: str, resume: bool) -> None:
         log.info("postprocess already complete | start=%s | end=%s", start_str, end_str)
         return
 
-    ensure_database()
+    ensure_database(engine=engine)
     _ensure_postprocess_prereqs()
 
     n_ok = 0
@@ -154,8 +159,8 @@ def run_postprocess_range(start_str: str, end_str: str, resume: bool) -> None:
     while current <= end:
         t0 = time.perf_counter()
         try:
-            run_enrich(current.isoformat())
-            run_marts(current.isoformat())
+            run_enrich(current.isoformat(), engine=engine)
+            run_marts(current.isoformat(), engine=engine)
             n_ok += 1
             _write_state(
                 state_file,

@@ -8,6 +8,8 @@ import sys
 import time
 from pathlib import Path
 
+import psycopg
+
 from .config import settings
 
 log = logging.getLogger("sql_runner")
@@ -47,8 +49,27 @@ def _summarize_output(output: str, limit: int = 200) -> str:
     return first_line[:limit]
 
 
-def run_sql_file(sql_path: str, vars: dict[str, str] | None = None) -> None:
-    path = _resolve_sql_path(sql_path)
+def _detect_engine(engine: str | None) -> str:
+    if engine:
+        if engine not in ("docker", "direct"):
+            raise ValueError(f"invalid engine: {engine}")
+        return engine
+    if os.getenv("DOCKER_CONTAINER") or os.getenv("DB_CONTAINER"):
+        return "docker"
+    return "direct"
+
+
+def _apply_vars(sql_text: str, vars: dict[str, str] | None) -> str:
+    if not vars:
+        return sql_text
+    out = sql_text
+    for key, value in vars.items():
+        out = out.replace(f":'{key}'", f"'{value}'")
+        out = re.sub(rf":{re.escape(key)}\\b", value, out)
+    return out
+
+
+def _run_sql_docker(path: Path, vars: dict[str, str] | None) -> None:
     container = os.getenv("DB_CONTAINER", "geoetl_postgis")
     db_user = os.getenv("DB_USER", settings.db_user)
     db_name = os.getenv("DB_NAME", settings.db_name)
@@ -73,7 +94,6 @@ def run_sql_file(sql_path: str, vars: dict[str, str] | None = None) -> None:
         for key, value in vars.items():
             cmd.extend(["-v", f"{key}={value}"])
 
-    log.info("run sql | path=%s", path)
     max_attempts = 10
     for attempt in range(1, max_attempts + 1):
         with path.open("rb") as handle:
@@ -107,3 +127,46 @@ def run_sql_file(sql_path: str, vars: dict[str, str] | None = None) -> None:
             output=result.stdout,
             stderr=result.stderr,
         )
+
+
+def _run_sql_direct(path: Path, vars: dict[str, str] | None, dsn: str | None) -> None:
+    if dsn:
+        conn = psycopg.connect(dsn)
+    else:
+        conn = psycopg.connect(
+            host=os.getenv("DB_HOST", settings.db_host),
+            port=os.getenv("DB_PORT", settings.db_port),
+            dbname=os.getenv("DB_NAME", settings.db_name),
+            user=os.getenv("DB_USER", settings.db_user),
+            password=os.getenv("DB_PASSWORD", settings.db_password),
+        )
+    conn.autocommit = True
+    raw_text = path.read_text(encoding="utf-8")
+    raw_text = raw_text.lstrip("\ufeff")
+    filtered = "\n".join(
+        line for line in raw_text.splitlines() if not line.lstrip().startswith("\\")
+    )
+    sql_text = _apply_vars(filtered, vars)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql_text)
+    except Exception as exc:
+        raise RuntimeError(f"direct sql failed | file={path} | err={exc}") from exc
+    finally:
+        conn.close()
+
+
+def run_sql_file(
+    sql_path: str,
+    vars: dict[str, str] | None = None,
+    engine: str | None = None,
+    dsn: str | None = None,
+) -> None:
+    path = _resolve_sql_path(sql_path)
+    engine = _detect_engine(engine)
+    log.info("run sql | path=%s | engine=%s", path, engine)
+
+    if engine == "docker":
+        return _run_sql_docker(path, vars)
+
+    return _run_sql_direct(path, vars, dsn)

@@ -26,15 +26,22 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def _run_cli(date_str: str) -> None:
+def _run_cli(date_str: str, no_cache: bool = False) -> None:
     env = os.environ.copy()
     env["PYTHONPATH"] = "src"
     uv_bin = shutil.which("uv")
+    extra = ["--no-cache"] if no_cache else []
     if uv_bin:
-        cmd = [uv_bin, "run", "python", "-m", "etl.cli", "--date", date_str]
+        cmd = [uv_bin, "run", "python", "-m", "etl.cli", "--date", date_str, *extra]
     else:
-        cmd = [sys.executable, "-m", "uv", "run", "python", "-m", "etl.cli", "--date", date_str]
-    subprocess.run(cmd, check=True, cwd=_repo_root(), env=env)
+        cmd = [sys.executable, "-m", "uv", "run", "python", "-m", "etl.cli", "--date", date_str, *extra]
+    try:
+        subprocess.run(cmd, check=True, cwd=_repo_root(), env=env)
+        return
+    except Exception as exc:
+        log.warning("uv run failed, fallback to python -m etl.cli | err=%s", exc)
+        fallback = [sys.executable, "-m", "etl.cli", "--date", date_str, *extra]
+        subprocess.run(fallback, check=True, cwd=_repo_root(), env=env)
 
 
 def _state_path(start: date, end: date) -> Path:
@@ -128,7 +135,14 @@ def _check_day_counts(day: date) -> tuple[float, int]:
     return pct_mun, missing_mun
 
 
-def run_backfill(start_str: str, end_str: str, checks: bool, resume: bool) -> None:
+def run_backfill(
+    start_str: str,
+    end_str: str,
+    checks: bool,
+    resume: bool,
+    engine: str | None = None,
+    no_cache: bool = False,
+) -> None:
     start = date.fromisoformat(start_str)
     end = date.fromisoformat(end_str)
     if start > end:
@@ -147,8 +161,8 @@ def run_backfill(start_str: str, end_str: str, checks: bool, resume: bool) -> No
             log.info("backfill already complete | start=%s | end=%s", start, end)
             return
 
-    ensure_database()
-    run_ref()
+    ensure_database(engine=engine)
+    run_ref(engine=engine)
 
     n_ok = 0
     n_fail = 0
@@ -161,9 +175,9 @@ def run_backfill(start_str: str, end_str: str, checks: bool, resume: bool) -> No
     while current <= end:
         t0 = time.perf_counter()
         try:
-            _run_cli(current.isoformat())
-            run_enrich(current.isoformat())
-            run_marts(current.isoformat())
+            _run_cli(current.isoformat(), no_cache=no_cache)
+            run_enrich(current.isoformat(), engine=engine)
+            run_marts(current.isoformat(), engine=engine)
             if checks:
                 run_checks(current.isoformat())
                 pct_mun, missing_mun = _check_day_counts(current)

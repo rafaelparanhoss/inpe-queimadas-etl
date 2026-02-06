@@ -14,7 +14,7 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def run_ref() -> None:
+def run_ref(engine: str | None = None) -> None:
     repo_root = _repo_root()
     sql_dir = repo_root / "sql" / "ref"
     files = sorted(sql_dir.glob("*.sql"))
@@ -25,15 +25,15 @@ def run_ref() -> None:
 
     if schema_file.exists():
         _log(f"run {schema_file.as_posix()}")
-        run_sql_file(str(schema_file))
+        run_sql_file(str(schema_file), engine=engine)
 
     _log("ensure ref ibge")
-    ensure_ref_ibge()
+    ensure_ref_ibge(engine=engine)
 
     for file in files:
         if file == schema_file:
             continue
         _log(f"run {file.as_posix()}")
-        run_sql_file(str(file))
+        run_sql_file(str(file), engine=engine)
 
     _log(f"done | files={len(files)}")

@@ -34,7 +34,13 @@ def _run_cli(date_str: str) -> None:
         cmd = [uv_bin, "run", "python", "-m", "etl.cli", "--date", date_str]
     else:
         cmd = [sys.executable, "-m", "uv", "run", "python", "-m", "etl.cli", "--date", date_str]
-    subprocess.run(cmd, check=True, cwd=_repo_root(), env=env)
+    try:
+        subprocess.run(cmd, check=True, cwd=_repo_root(), env=env)
+        return
+    except Exception as exc:
+        _log(f"uv run failed, fallback to python -m etl.cli | err={exc}")
+        fallback = [sys.executable, "-m", "etl.cli", "--date", date_str]
+        subprocess.run(fallback, check=True, cwd=_repo_root(), env=env)
 
 
 def _connect() -> psycopg.Connection:
@@ -99,7 +105,7 @@ def _delete_day(cursor: psycopg.Cursor, date_val: dt.date) -> None:
     cursor.execute("commit;")
 
 
-def run_reprocess(date_str: str, dry_run: bool) -> None:
+def run_reprocess(date_str: str, dry_run: bool, engine: str | None = None) -> None:
     date_val = dt.date.fromisoformat(date_str)
     _log(f"start | date={date_str} | dry_run={1 if dry_run else 0}")
 
@@ -172,10 +178,10 @@ select
     _run_cli(date_str)
 
     _log("run enrich")
-    run_enrich(date_str)
+    run_enrich(date_str, engine=engine)
 
     _log("run marts")
-    run_marts(date_str)
+    run_marts(date_str, engine=engine)
 
     _log("final checks")
     with _connect() as conn, conn.cursor() as cur:

@@ -47,7 +47,7 @@ def _tee_output(log_path: Path):
             sys.stderr = old_stderr
 
 
-def run_today(date_str: str) -> None:
+def run_today(date_str: str, engine: str | None = None, checks: bool = True) -> None:
     log_dir = Path(settings.data_dir) / "logs"
     report_dir = Path(settings.data_dir) / "reports" / date_str
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -56,16 +56,17 @@ def run_today(date_str: str) -> None:
     _log(f"start | date={date_str}")
 
     with _tee_output(log_dir / f"run_all_{date_str}.log"):
-        ensure_database()
-        run_ref()
+        ensure_database(engine=engine)
+        run_ref(engine=engine)
         run_cli(date_str)
-        run_enrich(date_str)
-        run_marts(date_str)
+        run_enrich(date_str, engine=engine)
+        run_marts(date_str, engine=engine)
 
-    with _tee_output(log_dir / f"checks_{date_str}.log"):
-        run_checks(date_str)
+    if checks:
+        with _tee_output(log_dir / f"checks_{date_str}.log"):
+            run_checks(date_str)
 
-    with _tee_output(log_dir / f"report_{date_str}.log"):
-        run_report(date_str)
+        with _tee_output(log_dir / f"report_{date_str}.log"):
+            run_report(date_str)
 
     _log(f"done | date={date_str}")

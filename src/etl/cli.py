@@ -50,7 +50,7 @@ def _try_load_dotenv() -> None:
     load_dotenv()
 
 
-def run(date_str: str) -> None:
+def run(date_str: str, no_cache: bool = False) -> None:
     # run the ETL flow for a single date
     _try_load_dotenv()
     _setup_logging()
@@ -62,7 +62,7 @@ def run(date_str: str) -> None:
 
     # extract csv from the INPE source
     t_extract = time.perf_counter()
-    ex = download_daily_csv(file_date)
+    ex = download_daily_csv(file_date, force=no_cache)
     dt_extract = time.perf_counter() - t_extract
 
     log.info("extract ok | dt=%.2fs | url=%s", dt_extract, ex.url)
@@ -95,13 +95,14 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     # parse command line arguments
     parser = argparse.ArgumentParser(description="run inpe queimadas etl")
     parser.add_argument("--date", required=True, help="date in YYYY-MM-DD")
+    parser.add_argument("--no-cache", action="store_true", help="force re-download")
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> None:
     # main entrypoint
     args = _parse_args(argv)
-    run(args.date)
+    run(args.date, no_cache=bool(args.no_cache))
 
 
 if __name__ == "__main__":

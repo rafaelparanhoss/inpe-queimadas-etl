@@ -13,7 +13,7 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def run_marts(date_str: str) -> None:
+def run_marts(date_str: str, engine: str | None = None) -> None:
     repo_root = _repo_root()
     files = [
         repo_root / "sql" / "marts" / "10_focos_diario_municipio.sql",
@@ -29,6 +29,6 @@ def run_marts(date_str: str) -> None:
 
     for file in files:
         _log(f"run {file.as_posix()} | date={date_str}")
-        run_sql_file(str(file), {"DATE": date_str})
+        run_sql_file(str(file), {"DATE": date_str}, engine=engine)
 
     _log(f"done | files={len(files)}")
