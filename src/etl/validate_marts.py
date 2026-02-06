@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import argparse
 import logging
+import json
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import psycopg
 
 from .config import settings
-import json
 
 from .apply_sql import ApplyStats, apply_dirs
 from .sql_runner import run_sql_file
@@ -28,6 +29,12 @@ def _connect() -> psycopg.Connection:
         user=settings.db_user,
         password=settings.db_password,
     )
+
+
+def _first_col(row: tuple[Any, ...] | None) -> Any | None:
+    if row is None or len(row) == 0:
+        return None
+    return row[0]
 
 
 def _write_report(stats_marts, stats_checks, check_results, counts) -> Path:
@@ -105,7 +112,7 @@ def _run_checks(
     return results, stats
 
 
-def _fetch_counts() -> dict:
+def _fetch_counts() -> dict[str, Any | None]:
     counts = {
         "uf_day": None,
         "uf_rows": None,
@@ -117,18 +124,18 @@ def _fetch_counts() -> dict:
     with _connect() as conn, conn.cursor() as cur:
         cur.execute("select max(day) from marts.focos_diario_uf;")
         row = cur.fetchone()
-        counts["uf_day"] = row[0] if row else None
+        counts["uf_day"] = _first_col(row)
         if counts["uf_day"]:
             cur.execute(
                 "select count(*) from marts.v_chart_uf_choropleth_day where day = %s;",
                 (counts["uf_day"],),
             )
             row = cur.fetchone()
-            counts["uf_rows"] = row[0] if row else None
+            counts["uf_rows"] = _first_col(row)
 
         cur.execute("select max(day) from marts.focos_diario_municipio;")
         row = cur.fetchone()
-        counts["mun_day"] = row[0] if row else None
+        counts["mun_day"] = _first_col(row)
         if counts["mun_day"]:
             cur.execute(
                 """
@@ -139,18 +146,18 @@ def _fetch_counts() -> dict:
                 (counts["mun_day"],),
             )
             row = cur.fetchone()
-            counts["mun_features"] = row[0] if row else None
+            counts["mun_features"] = _first_col(row)
 
-        cur.execute("select max(file_date) from curated.inpe_focos_enriched;")
+        cur.execute("select max(day) from marts.v_chart_focos_scatter;")
         row = cur.fetchone()
-        counts["scatter_day"] = row[0] if row else None
+        counts["scatter_day"] = _first_col(row)
         if counts["scatter_day"]:
             cur.execute(
-                "select count(*) from marts.v_chart_focos_scatter where file_date = %s;",
+                "select count(*) from marts.v_chart_focos_scatter where day = %s;",
                 (counts["scatter_day"],),
             )
             row = cur.fetchone()
-            counts["scatter_rows"] = row[0] if row else None
+            counts["scatter_rows"] = _first_col(row)
     return counts
 
 
@@ -186,9 +193,9 @@ def main(argv: list[str] | None = None) -> None:
     engine = None if args.engine == "auto" else args.engine
     stats_marts = apply_dirs(
         [
-            repo_root / "sql" / "minimal" / "ref_core",
-            repo_root / "sql" / "minimal" / "enrich",
-            repo_root / "sql" / "minimal" / "marts",
+            repo_root / "sqlm" / "ref_core",
+            repo_root / "sqlm" / "enrich",
+            repo_root / "sqlm" / "marts",
         ],
         vars_dict,
         args.dry_run,

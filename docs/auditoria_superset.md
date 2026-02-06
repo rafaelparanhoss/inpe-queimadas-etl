@@ -215,7 +215,7 @@ Assim o Superset usa sÃ³ `v_chart_*` e vocÃªs podem refatorar por baixo sem 
   select count(*) from marts.v_geo_focos_diario_uf_poly_by_day_superset_full_viz where poly_coords is null;
 
 ### 5.3 MigraÃ§Ã£o para o repo (parar SQL â€œsoltoâ€)
-- criar a estrutura `sql/minimal/` no repositorio com:
+- criar a estrutura `sqlm/` no repositorio com:
   - 010_mv_uf_geom_mainland.sql
   - 020_mv_uf_mainland_poly_noholes.sql
   - 030_mv_uf_polycoords_polygon_superset.sql

@@ -10,6 +10,6 @@ Core (nao remover):
 - sql/ref/**
 - sql/enrich/**
 - sql/marts/**
-- sql/minimal/**
+- sqlm/**
 - sql/checks/**
 - src/etl/** (pipeline + apply_portfolio)
