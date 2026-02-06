@@ -10,9 +10,9 @@
 - sqlm/ref_core/01_ref_schema.sql
 - sqlm/ref_core/05_ref_uf_area.sql
 - sqlm/ref_core/10_ref_geo_prepare.sql
-- sqlm/enrich/20_enrich_municipio.sql
-- sqlm/marts/core/10_focos_diario_municipio.sql
-- sqlm/marts/core/20_focos_diario_uf.sql
+- sql/enrich/20_enrich_municipio.sql
+- sql/marts/10_focos_diario_municipio.sql
+- sql/marts/20_focos_diario_uf.sql
 - sqlm/marts/prereq/010_mv_uf_geom_mainland.sql
 - sqlm/marts/prereq/020_mv_uf_mainland_poly_noholes.sql
 - sqlm/marts/prereq/030_mv_uf_polycoords_polygon_superset.sql
