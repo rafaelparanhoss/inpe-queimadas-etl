@@ -38,7 +38,8 @@ function Write-Section([string]$Title) {
     $targetParent = Split-Path -Path $resolvedPath -Parent
     Write-Output "resolved_path=$resolvedPath"
     Write-Output "resolved_parent=$targetParent"
-    Write-Output ("parent_exists=" + (Test-Path -LiteralPath $targetParent))
+    Write-Output ("parent_exists_testpath=" + (Test-Path -LiteralPath $targetParent))
+    Write-Output ("parent_exists_io=" + [System.IO.Directory]::Exists($targetParent))
     Get-Item -Force -LiteralPath $resolvedPath
     Write-Output ("test_path=" + (Test-Path -LiteralPath $resolvedPath))
 

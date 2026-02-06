@@ -15,7 +15,7 @@ Python 3.11 | pandas | requests | psycopg | PostGIS | Docker | uv
 ## Estrutura do projeto
 - sql/ref, sql/enrich, sql/marts: pipeline end-to-end
 - sqlm: portfolio core (views canonicas + mv_focos_day_dim)
-  - sqlm/marts/aux/manifest.yml: mapeamento old_path -> new_path (rastreamento de renomeacao)
+  - docs/migrations/sqlm_manifest.yml: mapeamento old_path -> new_path (rastreamento de renomeacao)
 - sql/checks: checks de qualidade
 - dash/superset: scaffold local
 - docs/superset_setup.md: wiring dos charts

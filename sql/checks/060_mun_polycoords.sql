@@ -6,14 +6,14 @@ declare
   n_mun int;
 begin
   select max(day) into last_day
-  from marts.v_geo_focos_diario_mun_poly_by_day_superset_full_viz;
+  from marts.v_chart_mun_choropleth_day;
 
   if last_day is null then
     raise exception 'check mun poly failed: no day in dataset';
   end if;
 
   select count(*) into n_null
-  from marts.v_geo_focos_diario_mun_poly_by_day_superset_full_viz
+  from marts.v_chart_mun_choropleth_day
   where day = last_day and poly_coords is null;
 
   if n_null > 0 then
@@ -21,7 +21,7 @@ begin
   end if;
 
   select count(distinct cd_mun) into n_mun
-  from marts.v_geo_focos_diario_mun_poly_by_day_superset_full_viz
+  from marts.v_chart_mun_choropleth_day
   where day = last_day;
 
   if n_mun = 0 then

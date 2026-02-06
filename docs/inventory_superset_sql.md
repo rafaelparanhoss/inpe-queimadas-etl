@@ -16,15 +16,12 @@
 - sqlm/marts/prereq/010_mv_uf_geom_mainland.sql
 - sqlm/marts/prereq/020_mv_uf_mainland_poly_noholes.sql
 - sqlm/marts/prereq/030_mv_uf_polycoords_polygon_superset.sql
-- sqlm/marts/aux/031_uf_poly_day_full.sql
-- sqlm/marts/aux/032_uf_poly_day_viz.sql
-- sqlm/marts/aux/034_geo_focos_diario_municipio.sql
-- sqlm/marts/aux/045_mun_poly_day_viz.sql
 - sqlm/marts/canonical/040_v_chart_uf_choropleth_day.sql
 - sqlm/marts/canonical/050_v_chart_mun_choropleth_day.sql
 - sqlm/marts/canonical/055_v_focos_enriched_full.sql
 - sqlm/marts/canonical/060_v_chart_focos_scatter.sql
 - sqlm/marts/canonical/065_mv_focos_day_dim.sql
+- docs/migrations/sqlm_manifest.yml
 
 ## checks
 - sql/checks/010_superset_uf_choropleth.sql

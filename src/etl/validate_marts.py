@@ -191,11 +191,16 @@ def main(argv: list[str] | None = None) -> None:
         log.info("apply minimal | enabled")
 
     engine = None if args.engine == "auto" else args.engine
+    minimal_marts_dirs = [
+        repo_root / "sqlm" / "marts" / "prereq",
+        repo_root / "sqlm" / "marts" / "core",
+        repo_root / "sqlm" / "marts" / "canonical",
+    ]
     stats_marts = apply_dirs(
         [
             repo_root / "sqlm" / "ref_core",
             repo_root / "sqlm" / "enrich",
-            repo_root / "sqlm" / "marts",
+            *minimal_marts_dirs,
         ],
         vars_dict,
         args.dry_run,

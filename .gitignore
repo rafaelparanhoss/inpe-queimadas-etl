@@ -9,3 +9,4 @@ data/
 audit/
 logs/*
 !logs/.gitkeep
+sqlm/marts/aux/
