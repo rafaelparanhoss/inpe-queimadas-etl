@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="pt-br">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>INPE | Queimadas</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  </head>
+  <body>
+    <div id="app">
+      <aside class="panel">
+        <div class="card">
+          <div class="row">
+            <div class="col">
+              <label>from</label>
+              <input id="from" type="date" />
+            </div>
+            <div class="col">
+              <label>to (exclusivo)</label>
+              <input id="to" type="date" />
+            </div>
+          </div>
+
+          <div class="row">
+            <button id="apply">aplicar</button>
+            <button id="clear">limpar filtros</button>
+            <button id="last30">ultimos 30 dias</button>
+          </div>
+
+          <div id="activeChips" class="chips"></div>
+
+          <div class="meta">
+            <div>uf: <span id="ufLabel">todas</span></div>
+            <div>bioma: <span id="biomaLabel">todos</span></div>
+            <div>municipio: <span id="munLabel">todos</span></div>
+            <div>uc: <span id="ucLabel">todas</span></div>
+            <div>ti: <span id="tiLabel">todas</span></div>
+            <div>total: <span id="totalLabel">-</span></div>
+            <div class="small" id="status"></div>
+          </div>
+        </div>
+
+        <details class="section" open>
+          <summary>visao geral</summary>
+          <div class="card">
+            <div class="kpiGrid">
+              <div class="kpi">
+                <div class="kpiLabel">total</div>
+                <div class="kpiValue" id="kpiTotal">-</div>
+              </div>
+              <div class="kpi">
+                <div class="kpiLabel">media/dia</div>
+                <div class="kpiValue" id="kpiMean">-</div>
+              </div>
+              <div class="kpi">
+                <div class="kpiLabel">dia de pico</div>
+                <div class="kpiValue" id="kpiPeak">-</div>
+              </div>
+              <div class="kpi">
+                <div class="kpiLabel">dias no range</div>
+                <div class="kpiValue" id="kpiDays">-</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>top ufs</h3>
+            <canvas id="topUfChart" height="170"></canvas>
+          </div>
+
+          <div class="card">
+            <h3>serie temporal</h3>
+            <canvas id="tsChart" height="170"></canvas>
+          </div>
+        </details>
+
+        <details class="section" open>
+          <summary>territorios</summary>
+          <div class="card">
+            <h3>top biomas</h3>
+            <canvas id="topBiomaChart" height="170"></canvas>
+          </div>
+          <div class="card">
+            <h3>top municipios</h3>
+            <div class="small notice" id="munGuardrail"></div>
+            <canvas id="topMunChart" height="170"></canvas>
+          </div>
+        </details>
+
+        <details class="section" open>
+          <summary>areas protegidas</summary>
+          <div class="card">
+            <h3>top ucs</h3>
+            <table class="miniTable">
+              <thead>
+                <tr>
+                  <th>uc</th>
+                  <th class="num">focos</th>
+                </tr>
+              </thead>
+              <tbody id="ucTableBody"></tbody>
+            </table>
+          </div>
+          <div class="card">
+            <h3>top tis</h3>
+            <table class="miniTable">
+              <thead>
+                <tr>
+                  <th>ti</th>
+                  <th class="num">focos</th>
+                </tr>
+              </thead>
+              <tbody id="tiTableBody"></tbody>
+            </table>
+          </div>
+        </details>
+      </aside>
+
+      <main class="mapWrap">
+        <div id="map"></div>
+      </main>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
