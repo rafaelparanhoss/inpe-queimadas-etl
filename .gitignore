@@ -10,3 +10,4 @@ audit/
 logs/*
 !logs/.gitkeep
 sqlm/marts/aux/
+web/node_modules/
