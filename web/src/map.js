@@ -2,6 +2,7 @@
 
 let map
 let layer
+let selectionOverlay
 let legendControl
 let legendEl
 
@@ -164,6 +165,7 @@ export function initMap(onFeaturePick) {
   }).addTo(map)
   map.fitBounds(BRAZIL_BOUNDS)
   layer = L.geoJSON({ type: 'FeatureCollection', features: [] }).addTo(map)
+  selectionOverlay = null
   setLegend(null, 'Legenda')
 
   return {
@@ -231,6 +233,44 @@ export function initMap(onFeaturePick) {
       }
 
       layer = L.geoJSON(geojson, { style, onEachFeature }).addTo(map)
+    },
+    setSelectionOverlay: (geojson) => {
+      if (selectionOverlay) {
+        selectionOverlay.remove()
+        selectionOverlay = null
+      }
+      if (!geojson || !Array.isArray(geojson.features) || !geojson.features.length) return false
+
+      const style = {
+        color: '#ffe29a',
+        weight: 2.8,
+        opacity: 1,
+        fillColor: '#ff8c2b',
+        fillOpacity: 0.16,
+        dashArray: '6 4',
+      }
+
+      selectionOverlay = L.geoJSON(geojson, {
+        style: () => style,
+        interactive: false,
+      }).addTo(map)
+      return true
+    },
+    clearSelectionOverlay: () => {
+      if (selectionOverlay) {
+        selectionOverlay.remove()
+        selectionOverlay = null
+      }
+    },
+    fitToSelectionOverlay: () => {
+      if (!selectionOverlay) return false
+      const b = selectionOverlay.getBounds()
+      if (!b.isValid()) return false
+      map.fitBounds(b, {
+        padding: [20, 20],
+        maxZoom: 11,
+      })
+      return true
     },
     fitToBbox: (bbox) => {
       if (!Array.isArray(bbox) || bbox.length !== 4) return

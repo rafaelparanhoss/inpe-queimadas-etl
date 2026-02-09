@@ -50,4 +50,7 @@ export const api = {
 
   lookupMun: (key, signal) =>
     fetchJson('/api/lookup/mun', { key }, signal),
+
+  fetchGeo: (entity, key, from, to, filters, signal) =>
+    fetchJson('/api/geo', withFilters(from, to, filters, { entity, key }), signal),
 }

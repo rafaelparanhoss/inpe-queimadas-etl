@@ -49,6 +49,12 @@ function entityForFilter(filterKey) {
   return null
 }
 
+function currentOverlaySelection(filters) {
+  if (filters.ti) return { entity: 'ti', key: filters.ti }
+  if (filters.uc) return { entity: 'uc', key: filters.uc }
+  return null
+}
+
 function startRequestCycle() {
   if (state.abort) state.abort.abort()
   const abort = new AbortController()
@@ -169,6 +175,21 @@ function toggleFilterAndRefresh(filterKey, value, { withBounds = true } = {}) {
 
   const prevUf = state.uf
   toggleFilter(filterKey, value)
+  if (filterKey === 'uc' && state.uc) {
+    setFilters({ ti: null })
+  }
+  if (filterKey === 'ti' && state.ti) {
+    setFilters({ uc: null })
+  }
+  if ((filterKey === 'uc' || filterKey === 'ti') && withBounds) {
+    const nextValue = state[filterKey]
+    if (nextValue) {
+      pendingOverlayFocus = { entity: filterKey, key: nextValue }
+    } else {
+      pendingOverlayFocus = null
+      mapCtl.clearSelectionOverlay()
+    }
+  }
   if (filterKey === 'uf') {
     if (!state.uf) {
       setFilters({ mun: null })
@@ -186,7 +207,7 @@ function toggleFilterAndRefresh(filterKey, value, { withBounds = true } = {}) {
   setFilterUi()
 
   const activeValue = state[filterKey]
-  if (withBounds && activeValue) {
+  if (withBounds && activeValue && filterKey !== 'uc' && filterKey !== 'ti') {
     void fetchBoundsAndFit(filterKey, activeValue)
   }
   refreshAllDebounced()
@@ -247,6 +268,44 @@ async function refreshAll() {
       selectedMun: filters.mun,
     })
 
+    let overlayError = ''
+    const overlaySelection = currentOverlaySelection(filters)
+    if (overlaySelection) {
+      const focusRequested = Boolean(
+        pendingOverlayFocus
+        && pendingOverlayFocus.entity === overlaySelection.entity
+        && String(pendingOverlayFocus.key) === String(overlaySelection.key),
+      )
+      try {
+        const overlayGeo = await api.fetchGeo(
+          overlaySelection.entity,
+          overlaySelection.key,
+          from,
+          to,
+          filters,
+          signal,
+        )
+        mapCtl.setSelectionOverlay(overlayGeo.geojson)
+        if (focusRequested) {
+          const fitted = mapCtl.fitToSelectionOverlay()
+          if (!fitted) {
+            await fetchBoundsAndFit(overlaySelection.entity, overlaySelection.key)
+          }
+          pendingOverlayFocus = null
+        }
+      } catch (err) {
+        overlayError = `Destaque ${overlaySelection.entity.toUpperCase()} indisponivel: ${String(err?.message || err)}`
+        mapCtl.clearSelectionOverlay()
+        if (focusRequested) {
+          pendingOverlayFocus = null
+          await fetchBoundsAndFit(overlaySelection.entity, overlaySelection.key)
+        }
+      }
+    } else {
+      mapCtl.clearSelectionOverlay()
+      pendingOverlayFocus = null
+    }
+
     chartsCtl.setTopUf(topUf.items)
     chartsCtl.setTopBioma(topBioma.items)
     chartsCtl.setTopMun(topMun.items)
@@ -286,6 +345,10 @@ async function refreshAll() {
       ui.setStatus(munLayerError)
       return
     }
+    if (overlayError) {
+      ui.setStatus(overlayError)
+      return
+    }
 
     if (layerType === 'mun' && state.ui.showMunLayer) {
       if (!filters.uf) {
@@ -311,12 +374,16 @@ function applyInputs() {
 function clearFilters() {
   const { from, to } = defaultRangeLast30()
   clearDimensionFilters()
+  pendingOverlayFocus = null
   setState({ from, to })
   ui.setInputs({ from, to })
+  mapCtl.clearSelectionOverlay()
   setFilterUi()
   mapCtl.fitBrazil()
   void refreshAll()
 }
+
+let pendingOverlayFocus = null
 
 const refreshAllDebounced = debounce(() => {
   void refreshAll()
@@ -372,6 +439,10 @@ ui.onChipRemove((filterKey) => {
   if (filterKey === 'uf') {
     setMunLayerEnabled(false)
     mapCtl.fitBrazil()
+  }
+  if (filterKey === 'uc' || filterKey === 'ti') {
+    pendingOverlayFocus = null
+    mapCtl.clearSelectionOverlay()
   }
   setFilterUi()
   refreshAllDebounced()
