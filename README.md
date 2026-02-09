@@ -190,6 +190,9 @@ Novidades desta fase:
   - `to` exclusivo (`[from,to)`).
   - Se range exceder `CHORO_MAX_DAYS_MUN` (default `180`), retorna `400`.
   - Se fonte municipal nao estiver configurada, retorna `501 geometry source not configured`.
+- `GET /api/lookup/mun?key=<cd_mun>`
+  - Resolve municipio para crossfilter: `{"mun","mun_nome","uf","uf_nome"}`.
+  - Usado no clique do ranking municipal para garantir estado valido (`mun` + `uf`) e habilitar camada municipal.
 
 #### Legenda dinamica (breaks)
 
@@ -197,7 +200,7 @@ Os endpoints de choropleth (`/api/choropleth/uf` e `/api/choropleth/mun`) retorn
 
 - `breaks`: limites de classe calculados no backend
 - `domain`: `[min,max]` dos valores no payload
-- `method`: `quantile`
+- `method`: `quantile` (fallback `equal` quando os valores nao permitem quantis estritamente crescentes)
 - `unit`: `focos`
 - `zero_class`: `true|false` (quando zero fica em classe separada)
 - `palette`: cores utilizadas no mapa
@@ -205,6 +208,7 @@ Os endpoints de choropleth (`/api/choropleth/uf` e `/api/choropleth/mun`) retorn
 Metodo padrao:
 - quantis com `k=5` classes
 - quando ha valores zero e valores positivos, zero pode ser tratado como classe separada (`zero_class=true`) e os quantis sao calculados sobre valores `> 0`
+- os breaks enviados para o front sao monotonicos e usados no renderer como intervalos `[b[i], b[i+1])` (ultimo intervalo inclusivo no limite superior)
 
 #### Variaveis GEO_* (api/.env)
 
@@ -262,6 +266,8 @@ curl.exe -s "http://127.0.0.1:8001/api/bounds?entity=uf&key=MT"
 curl.exe -s "http://127.0.0.1:8001/api/bounds?entity=mun&key=5103254"
 curl.exe -s "http://127.0.0.1:8001/api/bounds?entity=bioma&key=1"
 curl.exe -s "http://127.0.0.1:8001/api/choropleth/mun?from=2025-08-01&to=2025-09-01&uf=MT"
+curl.exe -s "http://127.0.0.1:8001/api/lookup/mun?key=5103254"
+curl.exe -s "http://127.0.0.1:8001/api/validate?from=2025-08-01&to=2025-09-01"
 ```
 
 Validar metadados de legenda (PowerShell):
@@ -271,6 +277,9 @@ $uf | Select-Object breaks, domain, method, unit, zero_class
 
 $mun = curl.exe -s "http://127.0.0.1:8001/api/choropleth/mun?from=2025-08-01&to=2025-09-01&uf=MT" | ConvertFrom-Json
 $mun | Select-Object breaks, domain, method, unit, zero_class
+
+$qa = curl.exe -s "http://127.0.0.1:8001/api/validate?from=2025-08-01&to=2025-09-01" | ConvertFrom-Json
+$qa | Select-Object consistent, invalid_filter_state, break_monotonicity_ok
 ```
 
 Subir web:
@@ -285,5 +294,7 @@ set VITE_API_BASE=http://127.0.0.1:8001
 - Legenda do mapa aparece e muda com o range de datas.
 - Bins do choropleth UF mudam quando o periodo muda.
 - Clique em ranking aplica filtro e executa fit bounds.
+- Clique em ranking municipal seta `mun` e `uf`, habilita camada municipal e faz fit no municipio.
+- Se bounds do item falhar, o zoom cai para UF selecionada e depois para Brasil.
 - Toggle municipal so habilita com UF selecionada.
 - Sem configuracao GEO_MUN_*, a UI continua com camada UF (fallback sem travar).
