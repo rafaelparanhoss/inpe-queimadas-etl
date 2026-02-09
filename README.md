@@ -171,3 +171,76 @@ curl.exe -s "http://127.0.0.1:8000/api/validate?from=2026-01-01&to=2026-02-01"
 cd web
 & "C:\Program Files\nodejs\npm.cmd" run dev
 ```
+
+### Fase 1.5 (Polish + Navegacao Espacial)
+
+Novidades desta fase:
+- UI em tema escuro, labels em Title Case e melhor legibilidade.
+- Choropleth de UF com legenda e bins dinamicos (escala quantile).
+- Zoom espacial por ranking via `GET /api/bounds`.
+- Camada municipal opcional via `GET /api/choropleth/mun`, com guardrails de performance.
+
+#### Endpoints novos
+
+- `GET /api/bounds?entity=uf|mun|bioma|uc|ti&key=...&uf=...`
+  - Retorna: `{"entity","key","bbox":[minLng,minLat,maxLng,maxLat],"center":[lat,lng]}`
+  - Quando fonte de geometria nao estiver configurada: `404 geometry source not configured`.
+- `GET /api/choropleth/mun?from=YYYY-MM-DD&to=YYYY-MM-DD&uf=XX`
+  - Exige `uf`.
+  - `to` exclusivo (`[from,to)`).
+  - Se range exceder `CHORO_MAX_DAYS_MUN` (default `180`), retorna `400`.
+  - Se fonte municipal nao estiver configurada, retorna `501 geometry source not configured`.
+
+#### Variaveis GEO_* (api/.env)
+
+Configure as fontes de geometria conforme suas tabelas reais:
+
+- `GEO_UF_TABLE`, `GEO_UF_KEY_COL`, `GEO_UF_GEOM_COL`
+- `GEO_MUN_TABLE`, `GEO_MUN_KEY_COL`, `GEO_MUN_UF_COL`, `GEO_MUN_GEOM_COL`
+- `GEO_BIOMA_TABLE`, `GEO_BIOMA_KEY_COL`, `GEO_BIOMA_GEOM_COL` (opcional)
+- `GEO_UC_TABLE`, `GEO_UC_KEY_COL`, `GEO_UC_GEOM_COL` (opcional)
+- `GEO_TI_TABLE`, `GEO_TI_KEY_COL`, `GEO_TI_GEOM_COL` (opcional)
+- `CHORO_MAX_DAYS_MUN` (default `180`)
+- `CHORO_SIMPLIFY_TOL` (default `0.01`)
+
+Template de views padrao:
+- `docs/sql/geo_sources_template.sql`
+
+Como descobrir tabelas/colunas de geometria no PostGIS:
+```sql
+select f_table_schema, f_table_name, f_geometry_column
+from geometry_columns
+order by 1,2;
+```
+
+#### Testes rapidos (Windows)
+
+Subir API:
+```powershell
+cd api
+& .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --log-level info
+```
+
+Smoke tests:
+```powershell
+curl.exe -s "http://127.0.0.1:8001/health"
+curl.exe -s "http://127.0.0.1:8001/api/choropleth/uf?from=2025-08-01&to=2025-09-01"
+curl.exe -s "http://127.0.0.1:8001/api/bounds?entity=uf&key=MT"
+curl.exe -s "http://127.0.0.1:8001/api/bounds?entity=mun&key=5103403"
+curl.exe -s "http://127.0.0.1:8001/api/choropleth/mun?from=2025-08-01&to=2025-09-01&uf=MT"
+```
+
+Subir web:
+```powershell
+cd web
+set VITE_API_BASE=http://127.0.0.1:8001
+& "C:\Program Files\nodejs\npm.cmd" run dev
+```
+
+#### Checklist rapido
+
+- Legenda do mapa aparece e muda com o range de datas.
+- Bins do choropleth UF mudam quando o periodo muda.
+- Clique em ranking aplica filtro e executa fit bounds.
+- Toggle municipal so habilita com UF selecionada.
+- Sem configuracao GEO_MUN_*, a UI continua com camada UF (fallback sem travar).
