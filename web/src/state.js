@@ -18,6 +18,17 @@ export function setState(patch) {
   Object.assign(state, patch)
 }
 
+export function setFilters(patch) {
+  const next = {}
+  for (const key of FILTER_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(patch, key)) {
+      next[key] = normalizeFilterValue(patch[key])
+    }
+  }
+  Object.assign(state, next)
+  ensureValidFilterState()
+}
+
 export function pickFilters() {
   return {
     uf: state.uf,
@@ -33,6 +44,7 @@ export function toggleFilter(key, value) {
   const nextValue = normalizeFilterValue(value)
   const next = state[key] === nextValue ? null : nextValue
   state[key] = next
+  ensureValidFilterState()
 }
 
 export function clearDimensionFilters() {
@@ -50,4 +62,13 @@ function normalizeFilterValue(value) {
 
 export function setMunLayerEnabled(enabled) {
   state.ui.showMunLayer = Boolean(enabled)
+}
+
+export function ensureValidFilterState() {
+  if (!state.uf && state.mun) {
+    state.mun = null
+  }
+  if (!state.uf) {
+    state.ui.showMunLayer = false
+  }
 }

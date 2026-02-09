@@ -47,4 +47,7 @@ export const api = {
 
   fetchBounds: (entity, key, filters, signal) =>
     fetchJson('/api/bounds', { entity, key, uf: filters?.uf }, signal),
+
+  lookupMun: (key, signal) =>
+    fetchJson('/api/lookup/mun', { key }, signal),
 }

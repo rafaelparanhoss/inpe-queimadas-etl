@@ -60,9 +60,19 @@ function getClassIndex(value, legendMeta) {
   if (legendMeta.zeroClass && n <= 0) return 0
 
   const offset = legendMeta.zeroClass ? 1 : 0
+  const lowerBound = Number(legendMeta.breaks[0])
+  if (Number.isFinite(lowerBound) && n <= lowerBound) {
+    return offset
+  }
+
   for (let i = 0; i < classes; i += 1) {
+    const low = Number(legendMeta.breaks[i])
     const high = Number(legendMeta.breaks[i + 1])
-    if (!Number.isFinite(high) || n <= high || i === classes - 1) {
+    const isLast = i === classes - 1
+    if (!Number.isFinite(high)) {
+      return offset + i
+    }
+    if (n >= low && (n < high || isLast)) {
       return offset + i
     }
   }
@@ -105,10 +115,10 @@ function setLegend(choro, title) {
     const low = Number(breaks[i])
     const high = Number(breaks[i + 1])
     const colorIdx = (legendMeta.zeroClass ? 1 : 0) + i
-    let rangeLabel = `${numberLabel(low)} - ${numberLabel(high)} ${legendMeta.unit}`
-    if (Math.round(low) === Math.round(high)) {
-      rangeLabel = `${numberLabel(high)} ${legendMeta.unit}`
-    }
+    const isLast = i === classes - 1
+    const rangeLabel = isLast
+      ? `${numberLabel(low)} a ${numberLabel(high)} ${legendMeta.unit}`
+      : `${numberLabel(low)} a < ${numberLabel(high)} ${legendMeta.unit}`
     items.push({
       color: palette[Math.min(colorIdx, palette.length - 1)],
       label: rangeLabel,

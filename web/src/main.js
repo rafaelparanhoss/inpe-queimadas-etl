@@ -1,6 +1,15 @@
 import './styles.css'
 
-import { state, setState, pickFilters, toggleFilter, clearDimensionFilters, setMunLayerEnabled } from './state.js'
+import {
+  state,
+  setState,
+  setFilters,
+  pickFilters,
+  toggleFilter,
+  clearDimensionFilters,
+  setMunLayerEnabled,
+  ensureValidFilterState,
+} from './state.js'
 import { api } from './api.js'
 import { initMap } from './map.js'
 import { initCharts } from './charts.js'
@@ -56,12 +65,56 @@ function setFilterUi() {
   ui.setMunLayerToggle({ enabled: ufSelected, checked: showMunLayer })
 
   if (!ufSelected) {
-    ui.setMunLayerHint('Selecione uma UF para habilitar a camada municipal.')
+    ui.setMunLayerHint('Para municipios, selecione uma UF.')
   } else if (showMunLayer) {
     ui.setMunLayerHint('Camada municipal ativa para a UF selecionada.')
   } else {
     ui.setMunLayerHint('Ative a camada municipal para navegar por municipios.')
   }
+}
+
+async function applyMunicipalitySelection(munKey, { withBounds = true } = {}) {
+  const key = String(munKey || '').trim()
+  if (!key) return
+
+  if (state.uf && state.mun === key) {
+    setFilters({ mun: null })
+    setFilterUi()
+    if (withBounds && state.uf) {
+      await fetchBoundsAndFit('uf', state.uf)
+    }
+    refreshAllDebounced()
+    return
+  }
+
+  let derivedUf = state.uf ? String(state.uf).toUpperCase() : null
+
+  try {
+    const lookup = await api.lookupMun(key)
+    if (lookup?.uf) {
+      derivedUf = String(lookup.uf).toUpperCase()
+    }
+  } catch {
+    if (!derivedUf) {
+      ui.setStatus('Selecione uma UF para explorar municipios.')
+      return
+    }
+  }
+
+  if (!derivedUf) {
+    ui.setStatus('Selecione uma UF para explorar municipios.')
+    return
+  }
+
+  setFilters({ uf: derivedUf, mun: key })
+  setMunLayerEnabled(true)
+  setFilterUi()
+
+  if (withBounds) {
+    await fetchBoundsAndFit('mun', key)
+  }
+
+  refreshAllDebounced()
 }
 
 async function fetchBoundsAndFit(filterKey, value) {
@@ -108,12 +161,24 @@ function normalizeTopItems(items, group) {
 }
 
 function toggleFilterAndRefresh(filterKey, value, { withBounds = true } = {}) {
+  if (filterKey === 'mun') {
+    void applyMunicipalitySelection(value, { withBounds })
+    return
+  }
+
   const prevUf = state.uf
   toggleFilter(filterKey, value)
-  if (filterKey === 'uf' && !state.uf) {
-    setMunLayerEnabled(false)
-    if (prevUf) mapCtl.fitBrazil()
+  if (filterKey === 'uf') {
+    if (!state.uf) {
+      setFilters({ mun: null })
+      setMunLayerEnabled(false)
+      if (prevUf) mapCtl.fitBrazil()
+    } else if (prevUf && state.uf !== prevUf) {
+      setFilters({ mun: null })
+    }
   }
+
+  ensureValidFilterState()
   setFilterUi()
 
   const activeValue = state[filterKey]
@@ -124,6 +189,7 @@ function toggleFilterAndRefresh(filterKey, value, { withBounds = true } = {}) {
 }
 
 async function refreshAll() {
+  ensureValidFilterState()
   const { from, to } = state
   if (!from || !to) return
 
@@ -276,7 +342,11 @@ ui.onMunLayerToggle((checked) => {
   refreshAllDebounced()
 })
 ui.onChipRemove((filterKey) => {
-  setState({ [filterKey]: null })
+  if (filterKey === 'uf') {
+    setFilters({ uf: null, mun: null })
+  } else {
+    setFilters({ [filterKey]: null })
+  }
   if (filterKey === 'uf') {
     setMunLayerEnabled(false)
     mapCtl.fitBrazil()
