@@ -8,6 +8,11 @@
   --accent: #4f8cff;
   --accent-2: #38bdf8;
   --warn: #f59e0b;
+  --sidebar-w: clamp(540px, 38vw, 720px);
+  --sidebar-min: 520px;
+  --sidebar-max: 760px;
+  --sidebar-pad: 16px;
+  --panel-font: 15px;
 }
 
 html, body {
@@ -25,8 +30,12 @@ html, body {
 }
 
 .panel {
-  width: clamp(460px, 32vw, 520px);
-  padding: 20px;
+  width: var(--sidebar-w);
+  min-width: var(--sidebar-min);
+  max-width: var(--sidebar-max);
+  padding: var(--sidebar-pad);
+  font-size: var(--panel-font);
+  line-height: 1.35;
   overflow: auto;
   border-right: 1px solid var(--card-border);
   background: linear-gradient(180deg, #0f1a30 0%, #0d1729 100%);
@@ -46,16 +55,16 @@ html, body {
   background: var(--card-bg);
   border: 1px solid var(--card-border);
   border-radius: 16px;
-  padding: 18px;
-  margin-bottom: 14px;
+  padding: 20px;
+  margin-bottom: 16px;
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.2);
 }
 
 .row {
   display: flex;
-  gap: 12px;
+  gap: 14px;
   align-items: end;
-  margin-top: 12px;
+  margin-top: 14px;
   flex-wrap: wrap;
 }
 
@@ -63,12 +72,12 @@ html, body {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   min-width: 132px;
 }
 
 label {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   text-transform: uppercase;
   color: var(--muted);
@@ -81,18 +90,18 @@ select {
   color: var(--text);
   border: 1px solid #2e426b;
   border-radius: 10px;
-  padding: 11px 12px;
-  min-height: 44px;
-  font-size: 14px;
+  padding: 12px 13px;
+  min-height: 46px;
+  font-size: 15px;
 }
 
 button {
-  padding: 11px 14px;
+  padding: 12px 15px;
   border-radius: 10px;
   border: 1px solid #2e426b;
   background: #142544;
   color: var(--text);
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   cursor: pointer;
 }
@@ -105,7 +114,7 @@ button:hover {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 14px;
+  font-size: 15px;
   color: var(--text);
 }
 
@@ -119,15 +128,15 @@ button:hover {
 }
 
 .meta {
-  margin-top: 14px;
-  font-size: 15px;
+  margin-top: 16px;
+  font-size: 16px;
   color: var(--text);
   display: grid;
   gap: 7px;
 }
 
 .small {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--muted);
 }
 
@@ -139,8 +148,8 @@ button:hover {
 }
 
 .chip {
-  font-size: 13px;
-  padding: 6px 10px;
+  font-size: 14px;
+  padding: 7px 11px;
   border-radius: 999px;
   border: 1px solid #365389;
   background: #1b2f57;
@@ -148,7 +157,7 @@ button:hover {
 }
 
 .chipMuted {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--muted);
 }
 
@@ -156,21 +165,21 @@ button:hover {
   border: 1px solid var(--card-border);
   border-radius: 16px;
   background: #101b32;
-  margin-bottom: 14px;
-  padding: 8px 12px 2px;
+  margin-bottom: 16px;
+  padding: 10px 14px 3px;
 }
 
 .section > summary {
   cursor: pointer;
   font-weight: 700;
-  font-size: 17px;
+  font-size: 18px;
   color: #d8e5ff;
   padding: 9px 4px;
 }
 
 h3 {
-  margin: 0 0 12px;
-  font-size: 18px;
+  margin: 0 0 14px;
+  font-size: 19px;
   font-weight: 700;
   letter-spacing: 0.03em;
 }
@@ -178,11 +187,11 @@ h3 {
 .chartBox {
   position: relative;
   width: 100%;
-  height: 250px;
+  height: 280px;
 }
 
 .chartBox.chartTall {
-  height: 285px;
+  height: 340px;
 }
 
 .chartBox > canvas {
@@ -200,20 +209,20 @@ h3 {
 .kpi {
   border: 1px solid #2b3f65;
   border-radius: 12px;
-  padding: 12px;
+  padding: 14px;
   background: #12213f;
 }
 
 .kpiLabel {
-  font-size: 13px;
+  font-size: 14px;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--muted);
 }
 
 .kpiValue {
-  margin-top: 7px;
-  font-size: 26px;
+  margin-top: 8px;
+  font-size: 30px;
   font-weight: 700;
   line-height: 1.2;
 }
@@ -227,7 +236,7 @@ h3 {
 .miniTable {
   width: 100%;
   border-collapse: collapse;
-  font-size: 14px;
+  font-size: 15px;
 }
 
 .miniTable th,
@@ -240,7 +249,7 @@ h3 {
 .miniTable th {
   color: #b8caea;
   text-transform: uppercase;
-  font-size: 12px;
+  font-size: 13px;
   letter-spacing: 0.05em;
 }
 
@@ -268,26 +277,30 @@ h3 {
 }
 
 .map-legend {
-  background: rgba(9, 14, 27, 0.84);
+  background: rgba(9, 14, 27, 0.94);
   border: 1px solid #2a3d61;
   border-radius: 12px;
-  padding: 12px 14px;
+  padding: 14px 16px;
   color: #dce8ff;
-  font-size: 13.5px;
-  line-height: 1.5;
-  min-width: 220px;
+  font-size: 14.5px;
+  line-height: 1.35;
+  min-width: 260px;
+  max-width: 340px;
+  max-height: 260px;
+  overflow: auto;
   backdrop-filter: blur(6px);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.38);
 }
 
 .map-legend .title {
   font-weight: 700;
-  font-size: 14px;
+  font-size: 15px;
   letter-spacing: 0.02em;
   margin-bottom: 8px;
 }
 
 .map-legend .sub {
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--muted);
   margin-bottom: 5px;
 }
@@ -300,11 +313,11 @@ h3 {
 }
 
 .map-legend .swatch {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   border-radius: 3px;
   border: 1px solid rgba(255, 255, 255, 0.2);
-  flex: 0 0 16px;
+  flex: 0 0 18px;
 }
 
 .leaflet-tooltip {
@@ -325,6 +338,10 @@ h3 {
   font-family: "Segoe UI Variable", "Segoe UI", "Inter", system-ui, sans-serif;
 }
 
+.leaflet-bottom.leaflet-right {
+  margin: 16px;
+}
+
 @media (max-width: 1180px) {
   #app {
     flex-direction: column;
@@ -332,17 +349,19 @@ h3 {
 
   .panel {
     width: auto;
+    min-width: 0;
+    max-width: none;
     max-height: 56%;
     border-right: none;
     border-bottom: 1px solid var(--card-border);
   }
 
   .chartBox {
-    height: 220px;
+    height: 240px;
   }
 
   .chartBox.chartTall {
-    height: 250px;
+    height: 280px;
   }
 
   .mapWrap {
