@@ -12,6 +12,7 @@ class TimeseriesItem(BaseModel):
 
 
 class TimeseriesResponse(BaseModel):
+    granularity: Literal["day", "week", "month"]
     items: list[TimeseriesItem]
 
 
@@ -99,3 +100,15 @@ class GeoOverlayResponse(BaseModel):
     entity: Literal["uc", "ti"]
     key: str
     geojson: dict[str, Any]
+
+
+class GeoOverlayQaResponse(BaseModel):
+    entity: Literal["uc", "ti"]
+    key: str
+    label: str
+    tol_m: float
+    area_m2: float
+    is_valid: bool
+    npoints_original: int
+    npoints_simplified: int
+    bbox: list[float]

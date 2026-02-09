@@ -18,6 +18,7 @@ from .schemas import (
     BoundsResponse,
     ChoroplethWithLegendResponse,
     GeoOverlayResponse,
+    GeoOverlayQaResponse,
     MunicipalityLookupResponse,
     SummaryResponse,
     TimeseriesResponse,
@@ -67,6 +68,9 @@ CHORO_QUANTILE_COLORS = [
     "#5a189a",
 ]
 MUN_GUARDRAIL_LIMIT = 10
+MAX_RANGE_DAYS = int(os.getenv("APP_MAX_RANGE_DAYS", "365"))
+TS_WEEK_THRESHOLD_DAYS = int(os.getenv("TS_WEEK_THRESHOLD_DAYS", "92"))
+TS_MONTH_THRESHOLD_DAYS = int(os.getenv("TS_MONTH_THRESHOLD_DAYS", "273"))
 CHORO_MAX_DAYS_MUN = int(os.getenv("CHORO_MAX_DAYS_MUN", "180"))
 CHORO_SIMPLIFY_TOL = float(os.getenv("CHORO_SIMPLIFY_TOL", "0.01"))
 
@@ -74,8 +78,8 @@ CHORO_SIMPLIFY_TOL = float(os.getenv("CHORO_SIMPLIFY_TOL", "0.01"))
 def _validate_range(from_date: date, to: date) -> None:
     if from_date >= to:
         raise HTTPException(status_code=400, detail="invalid range: require from < to (to is exclusive)")
-    if (to - from_date).days > 3660:
-        raise HTTPException(status_code=400, detail="range too large")
+    if (to - from_date).days > MAX_RANGE_DAYS:
+        raise HTTPException(status_code=400, detail=f"range too large: max {MAX_RANGE_DAYS} days")
 
 
 def _parse_default_range() -> tuple[date, date]:
@@ -351,6 +355,135 @@ def _fact_entity_columns(entity: GeoEntity) -> tuple[str, str]:
     if entity == "uc":
         return "cd_cnuc", "uc_nome"
     return "terrai_cod", "ti_nome"
+
+
+def _timeseries_granularity(days: int) -> Literal["day", "week", "month"]:
+    if days > TS_MONTH_THRESHOLD_DAYS:
+        return "month"
+    if days > TS_WEEK_THRESHOLD_DAYS:
+        return "week"
+    return "day"
+
+
+def _load_geo_shape_metrics(source: dict[str, str], key_norm: str) -> dict[str, object]:
+    table = source["table"]
+    key_col = source["key_col"]
+    geom_col = source["geom_col"]
+    sql_exists = f"""
+    select 1
+    from {table}
+    where {key_col}::text = %(key)s::text
+    limit 1;
+    """
+    sql = f"""
+    with src as (
+      select
+        {key_col}::text as key,
+        {geom_col} as geom_raw
+      from {table}
+      where {key_col}::text = %(key)s::text
+      limit 1
+    ),
+    norm as (
+      select
+        key,
+        st_collectionextract(
+          st_makevalid(
+            case
+              when st_srid(geom_raw) in (4326, 4674) then st_transform(geom_raw, 4326)
+              when st_srid(geom_raw) = 0 then st_setsrid(geom_raw, 4326)
+              else st_transform(geom_raw, 4326)
+            end
+          ),
+          3
+        ) as geom
+      from src
+    ),
+    ready as (
+      select
+        key,
+        geom,
+        st_area(geom::geography) as area_m2,
+        st_isvalid(geom) as is_valid,
+        st_npoints(geom) as npoints_original
+      from norm
+      where geom is not null and not st_isempty(geom)
+    ),
+    simp as (
+      select
+        key,
+        area_m2,
+        is_valid,
+        npoints_original,
+        case
+          when area_m2 < 500000000 then 50.0
+          when area_m2 < 5000000000 then 150.0
+          else 300.0
+        end as tol_m,
+        geom
+      from ready
+    ),
+    geom_s as (
+      select
+        key,
+        area_m2,
+        is_valid,
+        npoints_original,
+        tol_m,
+        st_collectionextract(
+          st_makevalid(
+            st_transform(
+              st_simplifypreservetopology(
+                st_transform(geom, 3857),
+                tol_m
+              ),
+              4326
+            )
+          ),
+          3
+        ) as geom
+      from simp
+    )
+    select
+      key,
+      area_m2::float8,
+      tol_m::float8,
+      is_valid,
+      npoints_original::bigint,
+      st_npoints(geom)::bigint as npoints_simplified,
+      st_xmin(st_envelope(geom))::float8 as minx,
+      st_ymin(st_envelope(geom))::float8 as miny,
+      st_xmax(st_envelope(geom))::float8 as maxx,
+      st_ymax(st_envelope(geom))::float8 as maxy,
+      st_asgeojson(geom)::jsonb as geom_json
+    from geom_s
+    where geom is not null and not st_isempty(geom)
+    limit 1;
+    """
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            try:
+                cur.execute(sql_exists, {"key": key_norm})
+                if cur.fetchone() is None:
+                    raise HTTPException(status_code=404, detail="geometry not found for key")
+                cur.execute(sql, {"key": key_norm})
+                row = cur.fetchone()
+            except Exception as exc:  # pragma: no cover - depends on runtime DB schema
+                if _is_geo_source_error(exc):
+                    raise HTTPException(status_code=404, detail="geometry source not configured") from exc
+                raise
+    if not row:
+        raise HTTPException(status_code=422, detail="geometry is null or invalid for key")
+    return {
+        "key": str(row[0]),
+        "area_m2": float(row[1]),
+        "tol_m": float(row[2]),
+        "is_valid": bool(row[3]),
+        "npoints_original": int(row[4]),
+        "npoints_simplified": int(row[5]),
+        "bbox": [float(row[6]), float(row[7]), float(row[8]), float(row[9])],
+        "geometry": row[10],
+    }
 
 
 @app.get("/health")
@@ -736,7 +869,7 @@ def geo_overlay(
     ti: Optional[str] = Query(default=None),
 ):
     t0 = now_ms()
-    key_norm = _norm_text(key, upper=True)
+    key_norm = _norm_text(key)
     if not key_norm:
         raise HTTPException(status_code=400, detail="key is required")
     if from_date is None or to is None:
@@ -750,32 +883,7 @@ def geo_overlay(
     geometry_key = f"/api/geo/shape?entity={entity}&key={key_norm}"
 
     def run_geometry():
-        table = source["table"]
-        key_col = source["key_col"]
-        geom_col = source["geom_col"]
-        sql = f"""
-        select
-          {key_col}::text as key,
-          st_asgeojson(st_simplifypreservetopology({geom_col}, %(tol)s::float8))::jsonb as geom
-        from {table}
-        where {key_col}::text = %(key)s::text
-        limit 1;
-        """
-        with pool.connection() as conn:
-            with conn.cursor() as cur:
-                try:
-                    cur.execute(sql, {"key": key_norm, "tol": CHORO_SIMPLIFY_TOL})
-                    row = cur.fetchone()
-                except Exception as exc:  # pragma: no cover - depends on runtime DB schema
-                    if _is_geo_source_error(exc):
-                        raise HTTPException(status_code=404, detail="geometry source not configured") from exc
-                    raise
-        if not row:
-            raise HTTPException(status_code=404, detail=f"{entity} not found for key")
-        out_key, geom = row
-        if geom is None:
-            raise HTTPException(status_code=422, detail="geometry is null for key")
-        return {"key": str(out_key), "geometry": geom}
+        return _load_geo_shape_metrics(source, key_norm)
 
     geometry_data = _cached(
         "geo_overlay_shape",
@@ -804,13 +912,13 @@ def geo_overlay(
             cur.execute(sql, params)
             row = cur.fetchone()
 
-    label = str((row[0] if row else None) or geometry_data["key"])
+    label = str((row[0] if row else None) or key_norm)
     n_focos = int(row[1] if row else 0)
     feature = {
         "type": "Feature",
         "properties": {
             "entity": entity,
-            "key": geometry_data["key"],
+            "key": key_norm,
             "label": label,
             "n_focos": n_focos,
         },
@@ -819,7 +927,7 @@ def geo_overlay(
 
     out = {
         "entity": entity,
-        "key": geometry_data["key"],
+        "key": key_norm,
         "geojson": {"type": "FeatureCollection", "features": [feature]},
     }
     logger.info(
@@ -829,6 +937,43 @@ def geo_overlay(
         _filters_payload(context_filters),
         now_ms() - t0,
     )
+    return out
+
+
+@app.get("/api/geo/qa", response_model=GeoOverlayQaResponse)
+def geo_overlay_qa(
+    request: Request,
+    entity: GeoEntity = Query(...),
+    key: str = Query(...),
+):
+    t0 = now_ms()
+    key_norm = _norm_text(key)
+    if not key_norm:
+        raise HTTPException(status_code=400, detail="key is required")
+    source = _geo_source(entity)
+    if source is None:
+        raise HTTPException(status_code=404, detail="geometry source not configured")
+
+    geometry_key = f"/api/geo/shape?entity={entity}&key={key_norm}"
+
+    metrics = _cached(
+        "geo_overlay_shape",
+        geometry_key,
+        lambda: _load_geo_shape_metrics(source, key_norm),
+        {"entity": entity, "key": key_norm},
+    )
+    out = {
+        "entity": entity,
+        "key": key_norm,
+        "label": key_norm,
+        "tol_m": float(metrics["tol_m"]),
+        "area_m2": float(metrics["area_m2"]),
+        "is_valid": bool(metrics["is_valid"]),
+        "npoints_original": int(metrics["npoints_original"]),
+        "npoints_simplified": int(metrics["npoints_simplified"]),
+        "bbox": [float(x) for x in metrics["bbox"]],
+    }
+    logger.info("geo_overlay_qa entity=%s key=%s ms=%s", entity, key_norm, now_ms() - t0)
     return out
 
 
@@ -849,29 +994,46 @@ def timeseries_total(
     _validate_range(from_date, to)
     filters = _normalize_filters(uf, bioma, mun, uc, ti)
     key = _cache_key(request)
+    days = (to - from_date).days
+    granularity = _timeseries_granularity(days)
 
     def run():
         where_sql, params = _build_fact_where(from_date, to, filters)
+        if granularity == "week":
+            bucket_expr = "date_trunc('week', day)::date"
+        elif granularity == "month":
+            bucket_expr = "date_trunc('month', day)::date"
+        else:
+            bucket_expr = "day::date"
         sql = f"""
         select
-          day,
+          {bucket_expr} as day_bucket,
           sum(n_focos)::bigint as n_focos
         from marts.mv_focos_day_dim
         where {where_sql}
-        group by day
-        order by day;
+        group by day_bucket
+        order by day_bucket;
         """
         with pool.connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(sql, params)
                 rows = cur.fetchall()
-        return {"items": [{"day": r[0], "n_focos": int(r[1] or 0)} for r in rows]}
+        return {
+            "granularity": granularity,
+            "items": [{"day": r[0], "n_focos": int(r[1] or 0)} for r in rows],
+        }
 
     out = _cached(
         "timeseries_total",
         key,
         run,
-        {"from": from_date, "to": to, "filters": _filters_payload(filters), "ms": now_ms() - t0},
+        {
+            "from": from_date,
+            "to": to,
+            "granularity": granularity,
+            "filters": _filters_payload(filters),
+            "ms": now_ms() - t0,
+        },
     )
     return out
 
