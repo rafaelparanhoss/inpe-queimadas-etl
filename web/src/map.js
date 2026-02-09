@@ -187,6 +187,76 @@ function clusterCellSize(zoom) {
   return Math.max(8, Math.min(60, raw))
 }
 
+function escapeHtml(text) {
+  return String(text || '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+}
+
+function splitMulti(value) {
+  if (value === null || value === undefined) return []
+  if (Array.isArray(value)) {
+    return value
+      .map((x) => String(x || '').trim())
+      .filter((x) => x.length > 0)
+  }
+  return String(value)
+    .split(/\s*[;|]\s*/)
+    .map((x) => x.trim())
+    .filter((x) => x.length > 0)
+}
+
+function mergeLabelKey(label, key) {
+  const lbl = String(label || '').trim()
+  const k = String(key || '').trim()
+  if (lbl && k && lbl.toUpperCase() !== k.toUpperCase()) {
+    return `${lbl} (${k})`
+  }
+  return lbl || k || ''
+}
+
+function mergeMultiLabelKey(labels, keys) {
+  const out = []
+  const n = Math.max(labels.length, keys.length)
+  for (let i = 0; i < n; i += 1) {
+    const item = mergeLabelKey(labels[i], keys[i])
+    if (item && !out.includes(item)) out.push(item)
+  }
+  return out
+}
+
+function truncateList(values, maxItems = 2) {
+  if (!values.length) return '-'
+  if (values.length <= maxItems) return values.join(', ')
+  const head = values.slice(0, maxItems).join(', ')
+  return `${head} +${values.length - maxItems}`
+}
+
+function pointDetailHtml(point) {
+  const n = Number(point.n || 1)
+  const uf = String(point.uf || '').trim().toUpperCase() || '-'
+  const mun = mergeLabelKey(point.mun_label, point.mun_key) || '-'
+  const bioma = mergeLabelKey(point.bioma_label, point.bioma_key) || '-'
+  const ucItems = mergeMultiLabelKey(splitMulti(point.uc_label), splitMulti(point.uc_key))
+  const tiItems = mergeMultiLabelKey(splitMulti(point.ti_label), splitMulti(point.ti_key))
+  const uc = truncateList(ucItems, 2)
+  const ti = truncateList(tiItems, 2)
+  const day = pointsDateLabel || '-'
+
+  return [
+    `<strong>Data:</strong> ${escapeHtml(day)}`,
+    `<strong>Focos:</strong> ${numberLabel(n)}`,
+    `<strong>UF:</strong> ${escapeHtml(uf)}`,
+    `<strong>Municipio:</strong> ${escapeHtml(mun)}`,
+    `<strong>Bioma:</strong> ${escapeHtml(bioma)}`,
+    `<strong>UC(s):</strong> ${escapeHtml(uc)}`,
+    `<strong>TI(s):</strong> ${escapeHtml(ti)}`,
+  ].join('<br/>')
+}
+
 function renderPointsClusters() {
   if (!pointsLayer) return
   pointsLayer.clearLayers()
@@ -219,6 +289,7 @@ function renderPointsClusters() {
         sumLon: lon,
         sumLat: lat,
         n,
+        sample: p,
       })
       continue
     }
@@ -261,8 +332,9 @@ function renderPointsClusters() {
       fillOpacity: 0.86,
       interactive: true,
     })
-    marker.bindTooltip(`Focos: ${numberLabel(n)}<br/>Data: ${pointsDateLabel || '-'}`, { sticky: true })
-    marker.bindPopup(`Focos: ${numberLabel(n)}<br/>Data: ${pointsDateLabel || '-'}`)
+    const detailHtml = pointDetailHtml(bucket.sample || { n })
+    marker.bindTooltip(detailHtml, { sticky: true })
+    marker.bindPopup(detailHtml)
     pointsLayer.addLayer(marker)
   }
 }
@@ -382,6 +454,15 @@ export function initMap(onFeaturePick) {
           lon: Number(p.lon),
           lat: Number(p.lat),
           n: Number(p.n) || 1,
+          uf: p.uf || null,
+          mun_key: p.mun_key || null,
+          mun_label: p.mun_label || null,
+          bioma_key: p.bioma_key || null,
+          bioma_label: p.bioma_label || null,
+          uc_key: p.uc_key || null,
+          uc_label: p.uc_label || null,
+          ti_key: p.ti_key || null,
+          ti_label: p.ti_label || null,
         }))
       renderPointsClusters()
     },
