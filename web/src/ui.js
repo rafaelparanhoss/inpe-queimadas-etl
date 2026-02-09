@@ -48,6 +48,7 @@ export function initUi() {
   const elShowPoints = document.getElementById('showPoints')
   const elPointsBadge = document.getElementById('pointsBadge')
   const elPointsHint = document.getElementById('pointsHint')
+  const elPointsMeta = document.getElementById('pointsMeta')
   const ufLabel = document.getElementById('ufLabel')
   const biomaLabel = document.getElementById('biomaLabel')
   const munLabel = document.getElementById('munLabel')
@@ -142,6 +143,23 @@ export function initUi() {
     },
     setPointsHint: (text) => {
       elPointsHint.textContent = text || ''
+    },
+    setPointsMeta: (payload) => {
+      if (!payload) {
+        elPointsMeta.textContent = ''
+        return
+      }
+      const returned = Number(payload.returned || 0)
+      const limit = Number(payload.limit || 0)
+      const truncated = Boolean(payload.truncated)
+      const dateTxt = String(payload.date || '-')
+      const bboxTxt = Array.isArray(payload.bbox)
+        ? payload.bbox.map((x) => Number(x).toFixed(2)).join(', ')
+        : '-'
+      elPointsMeta.textContent = `Data: ${dateTxt}
+Retornados: ${formatInt(returned)} / limite ${formatInt(limit)}
+Truncado: ${truncated ? 'sim' : 'nao'}
+BBox: ${bboxTxt}`
     },
     setPointsBadge: (payload) => {
       if (!payload) {

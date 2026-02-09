@@ -90,6 +90,10 @@ function setFilterUi() {
   ui.setMunLayerToggle({ enabled: ufSelected, checked: showMunLayer })
   ui.setPointsToggle({ checked: showPoints })
   ui.setPointsHint('Pontos usam 1 dia (from) e bbox visivel do mapa.')
+  if (!showPoints) {
+    ui.setPointsBadge(null)
+    ui.setPointsMeta(null)
+  }
 
   if (!ufSelected) {
     ui.setMunLayerHint('Para municipios, selecione uma UF.')
@@ -246,6 +250,11 @@ async function refreshPointsLayer() {
   const filters = pickFilters()
   const bbox = mapCtl.getViewportBbox()
   if (!bbox) return ''
+  const bboxCsv = [bbox[0], bbox[1], bbox[2], bbox[3]].join(',')
+  if (import.meta.env.DEV) {
+    // Dev-only trace to debug missing points / bbox issues.
+    console.debug('points bbox', bboxCsv, 'zoom', mapCtl.getZoom())
+  }
 
   const { date, note } = resolvePointsDate(from, to)
   if (!date) return ''
@@ -253,11 +262,14 @@ async function refreshPointsLayer() {
   const abort = startPointsRequestCycle()
   const signal = abort.signal
   try {
-    const payload = await api.points(date, bbox, filters, 20000, signal)
+    const payload = await api.points(date, bboxCsv, filters, 20000, signal)
     mapCtl.setPointsData(payload)
     ui.setPointsBadge(payload)
+    ui.setPointsMeta(payload)
     if (note) {
       ui.setPointsHint(note)
+    } else if (payload.truncated) {
+      ui.setPointsHint(`Exibindo amostra (limit=${payload.limit}) - aproxime o zoom.`)
     } else {
       ui.setPointsHint('Pontos usam 1 dia (from) e bbox visivel do mapa.')
     }
@@ -265,6 +277,7 @@ async function refreshPointsLayer() {
     if (err?.name === 'AbortError') return ''
     mapCtl.clearPoints()
     ui.setPointsBadge({ error: true })
+    ui.setPointsMeta(null)
     return `Pontos indisponiveis: ${String(err?.message || err)}`
   }
   return ''
@@ -323,6 +336,7 @@ async function refreshAll() {
       layerType,
       selectedUf: filters.uf,
       selectedMun: filters.mun,
+      pointsEnabled: Boolean(state.ui?.showPoints),
     })
 
     let overlayError = ''
@@ -450,6 +464,7 @@ function clearFilters() {
   mapCtl.clearSelectionOverlay()
   mapCtl.clearPoints()
   ui.setPointsBadge(null)
+  ui.setPointsMeta(null)
   setFilterUi()
   mapCtl.fitBrazil()
   void refreshAll()
@@ -522,6 +537,7 @@ ui.onPointsToggle((checked) => {
     }
     mapCtl.clearPoints()
     ui.setPointsBadge(null)
+    ui.setPointsMeta(null)
     return
   }
   void refreshPointsLayer()

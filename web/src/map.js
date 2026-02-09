@@ -12,6 +12,8 @@ let viewportChangeHandler
 
 const BRAZIL_BOUNDS = [[-34.5, -74.5], [6.0, -28.0]]
 const FALLBACK_COLORS = ['#1a1b2f', '#ffd166', '#fca311', '#f77f00', '#d62828', '#5a189a']
+const CHOROPLETH_PANE = 'choroplethPane'
+const POINTS_PANE = 'pointsPane'
 
 function numberLabel(v) {
   const n = Number(v)
@@ -180,6 +182,11 @@ function clusterRadius(count) {
   return 9
 }
 
+function clusterCellSize(zoom) {
+  const raw = 60 / Math.pow(1.25, Math.max(0, zoom - 4))
+  return Math.max(8, Math.min(60, raw))
+}
+
 function renderPointsClusters() {
   if (!pointsLayer) return
   pointsLayer.clearLayers()
@@ -192,7 +199,7 @@ function renderPointsClusters() {
   const maxLon = b.getEast()
   const maxLat = b.getNorth()
   const zoom = Math.max(0, Math.floor(map.getZoom()))
-  const cellSize = zoom >= 11 ? 34 : zoom >= 8 ? 48 : 64
+  const cellSize = clusterCellSize(zoom)
   const buckets = new Map()
 
   for (const p of pointsRaw) {
@@ -227,13 +234,16 @@ function renderPointsClusters() {
     if (bucket.count > 1) {
       const count = Number(bucket.count || 0)
       const marker = L.circleMarker([lat, lon], {
+        pane: POINTS_PANE,
         radius: clusterRadius(count),
         color: '#ffe29a',
         weight: 1.5,
         fillColor: '#d62828',
         fillOpacity: 0.74,
+        interactive: true,
       })
-      marker.bindTooltip(`Pontos: ${numberLabel(count)}`)
+      marker.bindTooltip(`Pontos: ${numberLabel(count)}`, { sticky: true })
+      marker.bindPopup(`Cluster: ${numberLabel(count)} focos`)
       marker.on('click', () => {
         map.setView([lat, lon], Math.min(zoom + 2, 14))
       })
@@ -243,13 +253,16 @@ function renderPointsClusters() {
 
     const n = Number(bucket.n || 1)
     const marker = L.circleMarker([lat, lon], {
-      radius: 3,
+      pane: POINTS_PANE,
+      radius: 4,
       color: '#ffd166',
       weight: 1,
       fillColor: '#f77f00',
       fillOpacity: 0.86,
+      interactive: true,
     })
-    marker.bindTooltip(`Focos: ${numberLabel(n)}<br/>Data: ${pointsDateLabel || '-'}`)
+    marker.bindTooltip(`Focos: ${numberLabel(n)}<br/>Data: ${pointsDateLabel || '-'}`, { sticky: true })
+    marker.bindPopup(`Focos: ${numberLabel(n)}<br/>Data: ${pointsDateLabel || '-'}`)
     pointsLayer.addLayer(marker)
   }
 }
@@ -260,8 +273,16 @@ export function initMap(onFeaturePick) {
     maxZoom: 18,
     attribution: '&copy; OpenStreetMap &copy; CARTO',
   }).addTo(map)
+  if (!map.getPane(CHOROPLETH_PANE)) {
+    map.createPane(CHOROPLETH_PANE)
+    map.getPane(CHOROPLETH_PANE).style.zIndex = '410'
+  }
+  if (!map.getPane(POINTS_PANE)) {
+    map.createPane(POINTS_PANE)
+    map.getPane(POINTS_PANE).style.zIndex = '650'
+  }
   map.fitBounds(BRAZIL_BOUNDS)
-  layer = L.geoJSON({ type: 'FeatureCollection', features: [] }).addTo(map)
+  layer = L.geoJSON({ type: 'FeatureCollection', features: [] }, { pane: CHOROPLETH_PANE }).addTo(map)
   pointsLayer = L.layerGroup().addTo(map)
   pointsRaw = []
   pointsDateLabel = null
@@ -280,6 +301,7 @@ export function initMap(onFeaturePick) {
       const layerType = options.layerType || 'uf'
       const selectedUf = options.selectedUf || null
       const selectedMun = options.selectedMun || null
+      const pointsEnabled = Boolean(options.pointsEnabled)
       const geojson = choro.geojson
       const legendMeta = resolveLegendMeta(choro)
 
@@ -305,6 +327,7 @@ export function initMap(onFeaturePick) {
       }
 
       const onEachFeature = (feat, lyr) => {
+        if (pointsEnabled) return
         const p = feat.properties || {}
         const key = p.key || p.uf
         const uf = String(p.uf || '')
@@ -338,7 +361,12 @@ export function initMap(onFeaturePick) {
         }
       }
 
-      layer = L.geoJSON(geojson, { style, onEachFeature }).addTo(map)
+      layer = L.geoJSON(geojson, {
+        pane: CHOROPLETH_PANE,
+        style,
+        onEachFeature,
+        interactive: !pointsEnabled,
+      }).addTo(map)
     },
     setPointsData: (payload) => {
       const points = Array.isArray(payload?.points) ? payload.points : []
@@ -366,6 +394,7 @@ export function initMap(onFeaturePick) {
       viewportChangeHandler = fn
     },
     getViewportBbox: () => getViewportBbox(),
+    getZoom: () => (map ? map.getZoom() : 0),
     setSelectionOverlay: (geojson) => {
       if (selectionOverlay) {
         selectionOverlay.remove()

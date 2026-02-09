@@ -401,16 +401,16 @@ def _parse_bbox(bbox: str) -> tuple[float, float, float, float]:
     raw = (bbox or "").strip()
     parts = [p.strip() for p in raw.split(",") if p.strip()]
     if len(parts) != 4:
-        raise HTTPException(status_code=400, detail="bbox must be minLon,minLat,maxLon,maxLat")
+        raise HTTPException(status_code=422, detail="bbox must be minLon,minLat,maxLon,maxLat")
     try:
         min_lon, min_lat, max_lon, max_lat = (float(parts[0]), float(parts[1]), float(parts[2]), float(parts[3]))
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail="bbox values must be numeric") from exc
+        raise HTTPException(status_code=422, detail="bbox values must be numeric") from exc
 
     if min_lon >= max_lon or min_lat >= max_lat:
-        raise HTTPException(status_code=400, detail="invalid bbox: require min < max")
+        raise HTTPException(status_code=422, detail="invalid bbox: require min < max")
     if min_lon < -180 or max_lon > 180 or min_lat < -90 or max_lat > 90:
-        raise HTTPException(status_code=400, detail="invalid bbox range")
+        raise HTTPException(status_code=422, detail="invalid bbox range")
     return min_lon, min_lat, max_lon, max_lat
 
 
@@ -1372,6 +1372,16 @@ def points(
             "zoom_bucket": zoom_bucket,
             "ms": now_ms() - t0,
         },
+    )
+    logger.info(
+        "points date=%s bbox=%s filters=%s returned=%s limit=%s truncated=%s ms=%s",
+        day_value,
+        out.get("bbox"),
+        _filters_payload(filters),
+        out.get("returned"),
+        out.get("limit"),
+        out.get("truncated"),
+        now_ms() - t0,
     )
     return out
 

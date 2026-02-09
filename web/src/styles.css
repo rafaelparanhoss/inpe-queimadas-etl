@@ -137,6 +137,12 @@ button:hover {
   color: var(--muted);
 }
 
+.pointsMeta {
+  margin-top: 6px;
+  line-height: 1.35;
+  white-space: pre-line;
+}
+
 .pill {
   display: inline-flex;
   align-items: center;
