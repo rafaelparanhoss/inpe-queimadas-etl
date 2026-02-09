@@ -330,3 +330,35 @@ Checklist visual:
 - selecione UF pelo dropdown e confirme que a camada municipal liga automaticamente;
 - clique em item de TI/UC e confirme zoom no poligono (fallback para UF/Brasil se bounds indisponivel);
 - alterne entre layer UF e municipal e confirme que a legenda muda sem faixas repetidas.
+
+### Fase 1.9 (Overlay UC/TI)
+
+Nesta fase foi adicionado:
+- `GET /api/geo?entity=uc|ti&key=<id>` para retornar GeoJSON simplificado do poligono selecionado;
+- overlay visual no mapa para UC/TI ativa (contorno + preenchimento leve), mantendo o choropleth UF/municipal como camada base;
+- zoom preferencial no overlay, com fallback para `/api/bounds` se `/api/geo` falhar.
+
+#### Endpoint `/api/geo`
+
+Retorno:
+- `entity`
+- `key`
+- `geojson` (`FeatureCollection` com 1 `Feature`)
+  - `properties`: `entity`, `key`, `label`, `n_focos`
+  - `geometry`: simplificada via `st_simplifypreservetopology(..., CHORO_SIMPLIFY_TOL)`
+
+Erros:
+- `404` quando `key` nao existe (ou fonte nao configurada)
+- `422` quando a geometria encontrada e nula
+
+Smoke (Windows):
+
+```powershell
+curl.exe -s "http://127.0.0.1:8001/api/geo?entity=uc&key=0000.00.0001"
+curl.exe -s "http://127.0.0.1:8001/api/geo?entity=ti&key=10001"
+```
+
+Validacao visual:
+- clique em Top UCs: aparece overlay da UC e zoom no poligono;
+- clique em Top TIs: aparece overlay da TI e zoom no poligono;
+- limpar filtros: overlay some.
