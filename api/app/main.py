@@ -500,7 +500,16 @@ def _run_points_query(
     select
       lon::float8 as lon,
       lat::float8 as lat,
-      1::int as n
+      1::int as n,
+      upper(nullif(trim(mun_uf), ''))::text as uf,
+      nullif(trim(mun_cd_mun), '')::text as mun_key,
+      nullif(trim(mun_nm_mun), '')::text as mun_label,
+      nullif(trim(cd_bioma), '')::text as bioma_key,
+      nullif(trim(bioma), '')::text as bioma_label,
+      nullif(trim(cd_cnuc), '')::text as uc_key,
+      nullif(trim(nome_uc), '')::text as uc_label,
+      nullif(trim(terrai_cod), '')::text as ti_key,
+      nullif(trim(terrai_nom), '')::text as ti_label
     from {source}
     where {where_sql}
     limit %(limit_plus_one)s;
@@ -515,12 +524,35 @@ def _run_points_query(
         rows = rows[: int(limit)]
 
     points = []
-    for lon, lat, n in rows:
+    for row in rows:
+        (
+            lon,
+            lat,
+            n,
+            uf_val,
+            mun_key,
+            mun_label,
+            bioma_key,
+            bioma_label,
+            uc_key,
+            uc_label,
+            ti_key,
+            ti_label,
+        ) = row
         points.append(
             {
                 "lon": float(lon),
                 "lat": float(lat),
                 "n": int(n or 1),
+                "uf": str(uf_val) if uf_val else None,
+                "mun_key": str(mun_key) if mun_key else None,
+                "mun_label": _clean_display_label(str(mun_label)) if mun_label else None,
+                "bioma_key": str(bioma_key) if bioma_key else None,
+                "bioma_label": _clean_display_label(str(bioma_label)) if bioma_label else None,
+                "uc_key": str(uc_key) if uc_key else None,
+                "uc_label": _clean_display_label(str(uc_label)) if uc_label else None,
+                "ti_key": str(ti_key) if ti_key else None,
+                "ti_label": _clean_display_label(str(ti_label)) if ti_label else None,
             }
         )
 

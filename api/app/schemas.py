@@ -132,6 +132,15 @@ class PointItem(BaseModel):
     lon: float
     lat: float
     n: int
+    uf: str | None = None
+    mun_key: str | None = None
+    mun_label: str | None = None
+    bioma_key: str | None = None
+    bioma_label: str | None = None
+    uc_key: str | None = None
+    uc_label: str | None = None
+    ti_key: str | None = None
+    ti_label: str | None = None
 
 
 class PointsResponse(BaseModel):
