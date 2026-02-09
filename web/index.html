@@ -12,102 +12,110 @@
         <div class="card">
           <div class="row">
             <div class="col">
-              <label>from</label>
+              <label>From</label>
               <input id="from" type="date" />
             </div>
             <div class="col">
-              <label>to (exclusivo)</label>
+              <label>To (Exclusivo)</label>
               <input id="to" type="date" />
             </div>
           </div>
 
           <div class="row">
-            <button id="apply">aplicar</button>
-            <button id="clear">limpar filtros</button>
-            <button id="last30">ultimos 30 dias</button>
+            <button id="apply">Aplicar</button>
+            <button id="clear">Limpar Filtros</button>
+            <button id="last30">Ultimos 30 Dias</button>
           </div>
+
+          <div class="row munToggleRow">
+            <label class="toggleWrap">
+              <input id="showMunLayer" type="checkbox" disabled />
+              Municipios (Quando UF Selecionada)
+            </label>
+          </div>
+          <div class="small" id="munLayerHint">Selecione uma UF para habilitar a camada municipal.</div>
 
           <div id="activeChips" class="chips"></div>
 
           <div class="meta">
-            <div>uf: <span id="ufLabel">todas</span></div>
-            <div>bioma: <span id="biomaLabel">todos</span></div>
-            <div>municipio: <span id="munLabel">todos</span></div>
-            <div>uc: <span id="ucLabel">todas</span></div>
-            <div>ti: <span id="tiLabel">todas</span></div>
-            <div>total: <span id="totalLabel">-</span></div>
+            <div>UF: <span id="ufLabel">Todas</span></div>
+            <div>Bioma: <span id="biomaLabel">Todos</span></div>
+            <div>Municipio: <span id="munLabel">Todos</span></div>
+            <div>UC: <span id="ucLabel">Todas</span></div>
+            <div>TI: <span id="tiLabel">Todas</span></div>
+            <div>Total: <span id="totalLabel">-</span></div>
             <div class="small" id="status"></div>
           </div>
         </div>
 
         <details class="section" open>
-          <summary>visao geral</summary>
+          <summary>Visao Geral</summary>
           <div class="card">
             <div class="kpiGrid">
               <div class="kpi">
-                <div class="kpiLabel">total</div>
+                <div class="kpiLabel">Total</div>
                 <div class="kpiValue" id="kpiTotal">-</div>
               </div>
               <div class="kpi">
-                <div class="kpiLabel">media/dia</div>
+                <div class="kpiLabel">Media / Dia</div>
                 <div class="kpiValue" id="kpiMean">-</div>
               </div>
               <div class="kpi">
-                <div class="kpiLabel">dia de pico</div>
+                <div class="kpiLabel">Dia de Pico</div>
                 <div class="kpiValue" id="kpiPeak">-</div>
               </div>
               <div class="kpi">
-                <div class="kpiLabel">dias no range</div>
+                <div class="kpiLabel">Dias no Range</div>
                 <div class="kpiValue" id="kpiDays">-</div>
               </div>
             </div>
           </div>
 
           <div class="card">
-            <h3>top ufs</h3>
+            <h3>Top UFs</h3>
             <canvas id="topUfChart" height="170"></canvas>
           </div>
 
           <div class="card">
-            <h3>serie temporal</h3>
+            <h3>Serie Temporal</h3>
             <canvas id="tsChart" height="170"></canvas>
           </div>
         </details>
 
         <details class="section" open>
-          <summary>territorios</summary>
+          <summary>Territorios</summary>
           <div class="card">
-            <h3>top biomas</h3>
+            <h3>Top Biomas</h3>
             <canvas id="topBiomaChart" height="170"></canvas>
           </div>
           <div class="card">
-            <h3>top municipios</h3>
+            <h3>Top Municipios</h3>
             <div class="small notice" id="munGuardrail"></div>
             <canvas id="topMunChart" height="170"></canvas>
           </div>
         </details>
 
         <details class="section" open>
-          <summary>areas protegidas</summary>
+          <summary>Areas Protegidas</summary>
           <div class="card">
-            <h3>top ucs</h3>
+            <h3>Top UCs</h3>
             <table class="miniTable">
               <thead>
                 <tr>
-                  <th>uc</th>
-                  <th class="num">focos</th>
+                  <th>UC</th>
+                  <th class="num">Focos</th>
                 </tr>
               </thead>
               <tbody id="ucTableBody"></tbody>
             </table>
           </div>
           <div class="card">
-            <h3>top tis</h3>
+            <h3>Top TIs</h3>
             <table class="miniTable">
               <thead>
                 <tr>
-                  <th>ti</th>
-                  <th class="num">focos</th>
+                  <th>TI</th>
+                  <th class="num">Focos</th>
                 </tr>
               </thead>
               <tbody id="tiTableBody"></tbody>

@@ -1,11 +1,28 @@
 import { formatInt } from './validate.js'
 
 const FALLBACK_LABEL = {
-  uf: 'todas',
-  bioma: 'todos',
-  mun: 'todos',
-  uc: 'todas',
-  ti: 'todas',
+  uf: 'Todas',
+  bioma: 'Todos',
+  mun: 'Todos',
+  uc: 'Todas',
+  ti: 'Todas',
+}
+
+const PT_SMALL_WORDS = new Set(['de', 'da', 'do', 'das', 'dos', 'em', 'para', 'e'])
+
+export function toTitleCasePt(text) {
+  if (text === null || text === undefined) return ''
+  const base = String(text).trim()
+  if (!base) return ''
+  return base
+    .split(/\s+/)
+    .map((raw, idx) => {
+      if (/^[A-Z0-9]{2,}$/.test(raw)) return raw
+      const lower = raw.toLowerCase()
+      if (idx > 0 && PT_SMALL_WORDS.has(lower)) return lower
+      return lower.charAt(0).toUpperCase() + lower.slice(1)
+    })
+    .join(' ')
 }
 
 export function initUi() {
@@ -14,6 +31,8 @@ export function initUi() {
   const elApply = document.getElementById('apply')
   const elClear = document.getElementById('clear')
   const elLast30 = document.getElementById('last30')
+  const elShowMunLayer = document.getElementById('showMunLayer')
+  const elMunLayerHint = document.getElementById('munLayerHint')
   const ufLabel = document.getElementById('ufLabel')
   const biomaLabel = document.getElementById('biomaLabel')
   const munLabel = document.getElementById('munLabel')
@@ -32,10 +51,14 @@ export function initUi() {
 
   return {
     getInputs: () => ({ from: elFrom.value, to: elTo.value }),
-    setInputs: ({ from, to }) => { elFrom.value = from; elTo.value = to },
+    setInputs: ({ from, to }) => {
+      elFrom.value = from
+      elTo.value = to
+    },
     onApply: (fn) => elApply.addEventListener('click', fn),
     onClear: (fn) => elClear.addEventListener('click', fn),
     onLast30: (fn) => elLast30.addEventListener('click', fn),
+    onMunLayerToggle: (fn) => elShowMunLayer.addEventListener('change', () => fn(elShowMunLayer.checked)),
     onChipRemove: (fn) => chips.addEventListener('click', (ev) => {
       const target = ev.target
       if (!(target instanceof HTMLElement)) return
@@ -53,18 +76,19 @@ export function initUi() {
         if (!(btn instanceof HTMLElement)) return
         const key = btn.dataset.filter
         const value = btn.dataset.value
+        const label = btn.dataset.label
         if (!key || !value) return
-        fn(key, value)
+        fn(key, value, label || value)
       }
       ucTableBody.addEventListener('click', handler)
       tiTableBody.addEventListener('click', handler)
     },
     setFilterLabels: (filters) => {
-      ufLabel.textContent = filters.uf || FALLBACK_LABEL.uf
-      biomaLabel.textContent = filters.bioma || FALLBACK_LABEL.bioma
-      munLabel.textContent = filters.mun || FALLBACK_LABEL.mun
-      ucLabel.textContent = filters.uc || FALLBACK_LABEL.uc
-      tiLabel.textContent = filters.ti || FALLBACK_LABEL.ti
+      ufLabel.textContent = filters.uf ? String(filters.uf).toUpperCase() : FALLBACK_LABEL.uf
+      biomaLabel.textContent = filters.bioma ? toTitleCasePt(filters.bioma) : FALLBACK_LABEL.bioma
+      munLabel.textContent = filters.mun ? toTitleCasePt(filters.mun) : FALLBACK_LABEL.mun
+      ucLabel.textContent = filters.uc ? toTitleCasePt(filters.uc) : FALLBACK_LABEL.uc
+      tiLabel.textContent = filters.ti ? toTitleCasePt(filters.ti) : FALLBACK_LABEL.ti
     },
     setActiveChips: (filters) => {
       chips.innerHTML = ''
@@ -72,7 +96,7 @@ export function initUi() {
       if (!entries.length) {
         const empty = document.createElement('span')
         empty.className = 'chipMuted'
-        empty.textContent = 'sem filtros dimensionais'
+        empty.textContent = 'Sem filtros dimensionais'
         chips.appendChild(empty)
         return
       }
@@ -81,9 +105,16 @@ export function initUi() {
         chip.type = 'button'
         chip.className = 'chip'
         chip.dataset.chipKey = key
-        chip.textContent = `${key}: ${value} x`
+        chip.textContent = `${toTitleCasePt(key)}: ${toTitleCasePt(value)} x`
         chips.appendChild(chip)
       }
+    },
+    setMunLayerToggle: ({ enabled, checked }) => {
+      elShowMunLayer.disabled = !enabled
+      elShowMunLayer.checked = Boolean(checked)
+    },
+    setMunLayerHint: (text) => {
+      elMunLayerHint.textContent = text || ''
     },
     setMunGuardrail: (note) => {
       munGuardrail.textContent = note || ''
@@ -102,8 +133,12 @@ export function initUi() {
     },
     setTopUc: (items) => renderTopTable(ucTableBody, items, 'uc'),
     setTopTi: (items) => renderTopTable(tiTableBody, items, 'ti'),
-    setTotal: (n) => { totalLabel.textContent = formatInt(n) },
-    setStatus: (txt) => { status.textContent = txt || '' },
+    setTotal: (n) => {
+      totalLabel.textContent = formatInt(n)
+    },
+    setStatus: (txt) => {
+      status.textContent = txt || ''
+    },
   }
 }
 
@@ -114,11 +149,12 @@ function renderTopTable(tbody, items, filterKey) {
     const cell = document.createElement('td')
     cell.colSpan = 2
     cell.className = 'empty'
-    cell.textContent = 'sem dados'
+    cell.textContent = 'Sem dados'
     row.appendChild(cell)
     tbody.appendChild(row)
     return
   }
+
   for (const item of items) {
     const row = document.createElement('tr')
     const labelCell = document.createElement('td')
@@ -130,7 +166,8 @@ function renderTopTable(tbody, items, filterKey) {
     btn.className = 'tablePick'
     btn.dataset.filter = filterKey
     btn.dataset.value = item.key
-    btn.textContent = item.label || item.key
+    btn.dataset.label = item.label || item.key
+    btn.textContent = toTitleCasePt(item.label || item.key)
 
     labelCell.appendChild(btn)
     valueCell.textContent = formatInt(item.n_focos || 0)

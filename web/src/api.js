@@ -27,6 +27,9 @@ export const api = {
   choroplethUf: (from, to, filters, signal) =>
     fetchJson('/api/choropleth/uf', withFilters(from, to, filters), signal),
 
+  choroplethMun: (from, to, filters, signal) =>
+    fetchJson('/api/choropleth/mun', withFilters(from, to, filters), signal),
+
   top: (group, from, to, filters, limit, signal) =>
     fetchJson('/api/top', withFilters(from, to, filters, { group, limit }), signal),
 
@@ -41,4 +44,7 @@ export const api = {
 
   validate: (from, to, filters, signal) =>
     fetchJson('/api/validate', withFilters(from, to, filters), signal),
+
+  fetchBounds: (entity, key, filters, signal) =>
+    fetchJson('/api/bounds', { entity, key, uf: filters?.uf }, signal),
 }

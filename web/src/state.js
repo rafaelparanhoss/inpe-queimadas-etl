@@ -6,6 +6,9 @@ export const state = {
   mun: null,
   uc: null,
   ti: null,
+  ui: {
+    showMunLayer: false,
+  },
   abort: null,
 }
 
@@ -36,10 +39,15 @@ export function clearDimensionFilters() {
   for (const key of FILTER_KEYS) {
     state[key] = null
   }
+  state.ui.showMunLayer = false
 }
 
 function normalizeFilterValue(value) {
   if (value === null || value === undefined) return null
   const out = String(value).trim()
   return out || null
+}
+
+export function setMunLayerEnabled(enabled) {
+  state.ui.showMunLayer = Boolean(enabled)
 }

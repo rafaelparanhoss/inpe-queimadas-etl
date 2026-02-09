@@ -1,8 +1,22 @@
+:root {
+  color-scheme: dark;
+  --bg: #0b1220;
+  --panel-bg: #111a2e;
+  --card-bg: #16233d;
+  --card-border: #24314f;
+  --text: #e6edf8;
+  --muted: #9fb0cf;
+  --accent: #4f8cff;
+  --accent-2: #38bdf8;
+  --warn: #f59e0b;
+}
+
 html, body {
   height: 100%;
   margin: 0;
-  font-family: system-ui, sans-serif;
-  color: #222;
+  background: radial-gradient(circle at 0 0, #1a2744 0%, var(--bg) 55%);
+  color: var(--text);
+  font-family: "Segoe UI", "Inter", system-ui, sans-serif;
 }
 
 #app {
@@ -11,11 +25,11 @@ html, body {
 }
 
 .panel {
-  width: 430px;
-  padding: 12px;
+  width: 460px;
+  padding: 14px;
   overflow: auto;
-  border-right: 1px solid #ddd;
-  background: #fafafa;
+  border-right: 1px solid var(--card-border);
+  background: linear-gradient(180deg, #0f1a30 0%, #0d1729 100%);
 }
 
 .mapWrap {
@@ -29,11 +43,12 @@ html, body {
 }
 
 .card {
-  background: #fff;
-  border: 1px solid #e6e6e6;
-  border-radius: 10px;
-  padding: 10px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  padding: 12px;
   margin-bottom: 10px;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.2);
 }
 
 .row {
@@ -54,36 +69,63 @@ html, body {
 
 label {
   font-size: 12px;
-  color: #444;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+
+input[type="date"] {
+  background: #0f1b31;
+  color: var(--text);
+  border: 1px solid #2e426b;
+  border-radius: 8px;
+  padding: 8px 10px;
 }
 
 button {
   padding: 8px 10px;
   border-radius: 8px;
-  border: 1px solid #ddd;
-  background: #fff;
+  border: 1px solid #2e426b;
+  background: #142544;
+  color: var(--text);
   cursor: pointer;
 }
 
 button:hover {
-  background: #f2f2f2;
+  background: #1b3057;
+}
+
+.toggleWrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.toggleWrap input {
+  accent-color: var(--accent);
+}
+
+#munLayerHint {
+  margin-top: 4px;
+  color: var(--muted);
 }
 
 .meta {
-  margin-top: 8px;
+  margin-top: 10px;
   font-size: 13px;
-  color: #333;
+  color: var(--text);
   display: grid;
   gap: 4px;
 }
 
 .small {
   font-size: 12px;
-  color: #666;
+  color: var(--muted);
 }
 
 .chips {
-  margin-top: 8px;
+  margin-top: 10px;
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
@@ -93,27 +135,35 @@ button:hover {
   font-size: 12px;
   padding: 4px 8px;
   border-radius: 999px;
-  border: 1px solid #d9d9d9;
+  border: 1px solid #365389;
+  background: #1b2f57;
+  color: #d9e7ff;
 }
 
 .chipMuted {
   font-size: 12px;
-  color: #777;
+  color: var(--muted);
 }
 
 .section {
-  border: 1px solid #e6e6e6;
-  border-radius: 10px;
-  background: #fff;
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  background: #101b32;
   margin-bottom: 10px;
-  padding: 4px 8px 0;
+  padding: 5px 8px 0;
 }
 
 .section > summary {
   cursor: pointer;
   font-weight: 600;
-  text-transform: lowercase;
+  color: #d8e5ff;
   padding: 6px 2px;
+}
+
+h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+  letter-spacing: 0.02em;
 }
 
 .kpiGrid {
@@ -123,24 +173,27 @@ button:hover {
 }
 
 .kpi {
-  border: 1px solid #eee;
-  border-radius: 8px;
-  padding: 8px;
+  border: 1px solid #2b3f65;
+  border-radius: 10px;
+  padding: 9px;
+  background: #12213f;
 }
 
 .kpiLabel {
   font-size: 12px;
-  color: #666;
+  color: var(--muted);
 }
 
 .kpiValue {
   margin-top: 4px;
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.2;
 }
 
 .notice {
   margin-bottom: 6px;
+  color: var(--warn);
   display: none;
 }
 
@@ -152,9 +205,13 @@ button:hover {
 
 .miniTable th,
 .miniTable td {
-  border-bottom: 1px solid #eee;
-  padding: 6px 4px;
+  border-bottom: 1px solid #273a60;
+  padding: 7px 4px;
   text-align: left;
+}
+
+.miniTable th {
+  color: #b8caea;
 }
 
 .miniTable th.num,
@@ -167,7 +224,7 @@ button:hover {
   background: transparent;
   padding: 0;
   text-align: left;
-  color: #1d4d8f;
+  color: var(--accent-2);
 }
 
 .tablePick:hover {
@@ -176,23 +233,65 @@ button:hover {
 }
 
 .empty {
-  color: #777;
+  color: var(--muted);
   text-align: center;
 }
 
-@media (max-width: 1100px) {
+.map-legend {
+  background: rgba(9, 14, 27, 0.9);
+  border: 1px solid #2a3d61;
+  border-radius: 10px;
+  padding: 8px 10px;
+  color: #dce8ff;
+  font-size: 12px;
+  line-height: 1.35;
+  min-width: 148px;
+}
+
+.map-legend .title {
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.map-legend .item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+
+.map-legend .swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  flex: 0 0 14px;
+}
+
+.leaflet-tooltip {
+  background: #0b1324;
+  color: #e5efff;
+  border: 1px solid #2c4269;
+  box-shadow: none;
+}
+
+.leaflet-tooltip:before {
+  border-top-color: #2c4269;
+}
+
+@media (max-width: 1180px) {
   #app {
     flex-direction: column;
   }
 
   .panel {
     width: auto;
-    max-height: 55%;
+    max-height: 58%;
     border-right: none;
-    border-bottom: 1px solid #ddd;
+    border-bottom: 1px solid var(--card-border);
   }
 
   .mapWrap {
-    min-height: 45%;
+    min-height: 42%;
   }
 }

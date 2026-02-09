@@ -1,11 +1,11 @@
 import './styles.css'
 
-import { state, setState, pickFilters, toggleFilter, clearDimensionFilters } from './state.js'
+import { state, setState, pickFilters, toggleFilter, clearDimensionFilters, setMunLayerEnabled } from './state.js'
 import { api } from './api.js'
 import { initMap } from './map.js'
 import { initCharts } from './charts.js'
-import { initUi, debounce } from './ui.js'
-import { sum, assertClose } from './validate.js'
+import { debounce, initUi, toTitleCasePt } from './ui.js'
+import { assertClose, sum } from './validate.js'
 
 function todayIso() {
   const d = new Date()
@@ -31,6 +31,15 @@ function defaultRangeLast30() {
   return { from, to }
 }
 
+function entityForFilter(filterKey) {
+  if (filterKey === 'uf') return 'uf'
+  if (filterKey === 'mun') return 'mun'
+  if (filterKey === 'bioma') return 'bioma'
+  if (filterKey === 'uc') return 'uc'
+  if (filterKey === 'ti') return 'ti'
+  return null
+}
+
 function startRequestCycle() {
   if (state.abort) state.abort.abort()
   const abort = new AbortController()
@@ -40,13 +49,60 @@ function startRequestCycle() {
 
 function setFilterUi() {
   const filters = pickFilters()
+  const ufSelected = Boolean(filters.uf)
+  const showMunLayer = Boolean(state.ui?.showMunLayer && ufSelected)
   ui.setFilterLabels(filters)
   ui.setActiveChips(filters)
+  ui.setMunLayerToggle({ enabled: ufSelected, checked: showMunLayer })
+
+  if (!ufSelected) {
+    ui.setMunLayerHint('Selecione uma UF para habilitar a camada municipal.')
+  } else if (showMunLayer) {
+    ui.setMunLayerHint('Camada municipal ativa para a UF selecionada.')
+  } else {
+    ui.setMunLayerHint('Ative a camada municipal para navegar por municipios.')
+  }
 }
 
-function toggleFilterAndRefresh(filterKey, value) {
+async function fetchBoundsAndFit(filterKey, value) {
+  const entity = entityForFilter(filterKey)
+  if (!entity || !value) return
+  try {
+    const bounds = await api.fetchBounds(entity, value, pickFilters())
+    mapCtl.fitToBbox(bounds.bbox)
+  } catch (err) {
+    const msg = String(err?.message || err)
+    if (msg.includes('geometry source not configured')) {
+      ui.setStatus('Fonte de geometria nao configurada para fit bounds.')
+    }
+  }
+}
+
+function normalizeTopItems(items, group) {
+  return (items || []).map((item) => {
+    const out = { ...item }
+    if (group === 'uf') {
+      out.label = String(item.label || item.key).toUpperCase()
+    } else {
+      out.label = toTitleCasePt(item.label || item.key)
+    }
+    return out
+  })
+}
+
+function toggleFilterAndRefresh(filterKey, value, { withBounds = true } = {}) {
+  const prevUf = state.uf
   toggleFilter(filterKey, value)
+  if (filterKey === 'uf' && !state.uf) {
+    setMunLayerEnabled(false)
+    if (prevUf) mapCtl.fitBrazil()
+  }
   setFilterUi()
+
+  const activeValue = state[filterKey]
+  if (withBounds && activeValue) {
+    void fetchBoundsAndFit(filterKey, activeValue)
+  }
   refreshAllDebounced()
 }
 
@@ -55,9 +111,9 @@ async function refreshAll() {
   if (!from || !to) return
 
   const filters = pickFilters()
-  ui.setStatus('carregando...')
-  ui.setFilterLabels(filters)
-  ui.setActiveChips(filters)
+  const showMunLayer = Boolean(state.ui?.showMunLayer && filters.uf)
+  ui.setStatus('Carregando...')
+  setFilterUi()
 
   const abort = startRequestCycle()
   const signal = abort.signal
@@ -65,7 +121,7 @@ async function refreshAll() {
   try {
     const munLimit = filters.uf ? 20 : 10
 
-    const [summary, choro, topUf, topBioma, topMun, topUc, topTi, ts, tot, qa] = await Promise.all([
+    const [summary, choroUf, topUfRaw, topBiomaRaw, topMunRaw, topUcRaw, topTiRaw, ts, tot, qa] = await Promise.all([
       api.summary(from, to, filters, signal),
       api.choroplethUf(from, to, filters, signal),
       api.top('uf', from, to, filters, 10, signal),
@@ -78,7 +134,32 @@ async function refreshAll() {
       api.validate(from, to, filters, signal).catch(() => null),
     ])
 
-    mapCtl.setGeojson(choro.features, filters.uf)
+    let layerPayload = choroUf
+    let layerType = 'uf'
+    let munLayerError = ''
+    if (showMunLayer) {
+      try {
+        const choroMun = await api.choroplethMun(from, to, filters, signal)
+        layerPayload = choroMun
+        layerType = 'mun'
+      } catch (err) {
+        munLayerError = `Camada municipal indisponivel: ${String(err?.message || err)}`
+        ui.setMunLayerHint(munLayerError)
+      }
+    }
+
+    const topUf = { ...topUfRaw, items: normalizeTopItems(topUfRaw.items, 'uf') }
+    const topBioma = { ...topBiomaRaw, items: normalizeTopItems(topBiomaRaw.items, 'bioma') }
+    const topMun = { ...topMunRaw, items: normalizeTopItems(topMunRaw.items, 'mun') }
+    const topUc = { ...topUcRaw, items: normalizeTopItems(topUcRaw.items, 'uc') }
+    const topTi = { ...topTiRaw, items: normalizeTopItems(topTiRaw.items, 'ti') }
+
+    mapCtl.setChoropleth(layerPayload, {
+      layerType,
+      selectedUf: filters.uf,
+      selectedMun: filters.mun,
+    })
+
     chartsCtl.setTopUf(topUf.items)
     chartsCtl.setTopBioma(topBioma.items)
     chartsCtl.setTopMun(topMun.items)
@@ -91,24 +172,43 @@ async function refreshAll() {
 
     const total = Number(tot.n_focos || 0)
     const tsSum = sum(ts.items || [], 'n_focos')
-    const mapSum = (choro.features?.features || []).reduce(
+    const mapSumUf = (choroUf.geojson?.features || []).reduce(
       (acc, f) => acc + (Number(f.properties?.n_focos) || 0),
       0,
     )
 
     if (!assertClose(total, tsSum)) {
-      ui.setStatus(`inconsistencia: totals(${total}) != tsSum(${tsSum})`)
+      ui.setStatus(`Inconsistencia: totals(${total}) != tsSum(${tsSum})`)
       return
     }
-    if (!assertClose(total, mapSum)) {
-      ui.setStatus(`inconsistencia: totals(${total}) != mapSum(${mapSum})`)
+    if (!assertClose(total, mapSumUf)) {
+      ui.setStatus(`Inconsistencia: totals(${total}) != mapUfSum(${mapSumUf})`)
       return
     }
     if (qa && qa.consistent === false) {
-      ui.setStatus('inconsistencia em /api/validate')
+      ui.setStatus('Inconsistencia em /api/validate')
       return
     }
-    ui.setStatus('')
+
+    if (!ui.getInputs().from || !ui.getInputs().to) {
+      ui.setStatus('Defina um range de datas valido.')
+      return
+    }
+
+    if (munLayerError) {
+      ui.setStatus(munLayerError)
+      return
+    }
+
+    if (layerType === 'mun' && state.ui.showMunLayer) {
+      if (!filters.uf) {
+        ui.setStatus('Selecione uma UF para manter a camada municipal.')
+      } else {
+        ui.setStatus('')
+      }
+    } else {
+      ui.setStatus('')
+    }
   } catch (err) {
     if (err?.name === 'AbortError') return
     ui.setStatus(String(err?.message || err))
@@ -127,26 +227,49 @@ function clearFilters() {
   setState({ from, to })
   ui.setInputs({ from, to })
   setFilterUi()
+  mapCtl.fitBrazil()
   void refreshAll()
 }
 
 const refreshAllDebounced = debounce(() => {
   void refreshAll()
-}, 120)
+}, 150)
 
 const ui = initUi()
-const mapCtl = initMap((uf) => toggleFilterAndRefresh('uf', uf))
-const chartsCtl = initCharts((filterKey, value) => toggleFilterAndRefresh(filterKey, value))
+const mapCtl = initMap((filterKey, value) => {
+  toggleFilterAndRefresh(filterKey, value, { withBounds: false })
+})
+const chartsCtl = initCharts((filterKey, item) => {
+  const key = item?.key
+  if (!key) return
+  toggleFilterAndRefresh(filterKey, key, { withBounds: true })
+})
 
 ui.onApply(applyInputs)
 ui.onClear(clearFilters)
 ui.onLast30(clearFilters)
-ui.onChipRemove((filterKey) => {
-  setState({ [filterKey]: null })
+ui.onMunLayerToggle((checked) => {
+  if (!state.uf) {
+    setMunLayerEnabled(false)
+    setFilterUi()
+    return
+  }
+  setMunLayerEnabled(checked)
   setFilterUi()
   refreshAllDebounced()
 })
-ui.onTopTablePick((filterKey, value) => toggleFilterAndRefresh(filterKey, value))
+ui.onChipRemove((filterKey) => {
+  setState({ [filterKey]: null })
+  if (filterKey === 'uf') {
+    setMunLayerEnabled(false)
+    mapCtl.fitBrazil()
+  }
+  setFilterUi()
+  refreshAllDebounced()
+})
+ui.onTopTablePick((filterKey, value) => {
+  toggleFilterAndRefresh(filterKey, value, { withBounds: true })
+})
 
 {
   const { from, to } = defaultRangeLast30()
