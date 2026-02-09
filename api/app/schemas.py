@@ -132,6 +132,8 @@ class PointItem(BaseModel):
     lon: float
     lat: float
     n: int
+    point_date: date | None = None
+    point_id: str | None = None
     uf: str | None = None
     mun_key: str | None = None
     mun_label: str | None = None
