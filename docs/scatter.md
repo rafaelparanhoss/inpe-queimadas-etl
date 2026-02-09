@@ -18,6 +18,12 @@ Regras:
 - Se o range for exatamente 1 dia (`to = from + 1`), a UI forca `from`.
 - Se o range for maior que 1 dia, a UI usa o modo selecionado.
 
+## Regra de range `[from,to)` (to exclusivo)
+
+- Todos os endpoints e graficos usam range **exclusivo em `to`**.
+- Para representar **1 dia**, use `from = D` e `to = D+1`.
+- Se o usuario aplicar `from == to` (ou `to < from`), a UI ajusta automaticamente para `to = from + 1` antes de chamar a API.
+
 ## Endpoint `/api/points`
 
 `GET /api/points?date=YYYY-MM-DD&bbox=minLon,minLat,maxLon,maxLat&limit=...&uf=&bioma=&mun=&uc=&ti=`
