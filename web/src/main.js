@@ -60,6 +60,7 @@ function setFilterUi() {
   const filters = pickFilters()
   const ufSelected = Boolean(filters.uf)
   const showMunLayer = Boolean(state.ui?.showMunLayer && ufSelected)
+  ui.setUfSelect(filters.uf)
   ui.setFilterLabels(filters)
   ui.setActiveChips(filters)
   ui.setMunLayerToggle({ enabled: ufSelected, checked: showMunLayer })
@@ -175,6 +176,9 @@ function toggleFilterAndRefresh(filterKey, value, { withBounds = true } = {}) {
       if (prevUf) mapCtl.fitBrazil()
     } else if (prevUf && state.uf !== prevUf) {
       setFilters({ mun: null })
+      setMunLayerEnabled(true)
+    } else {
+      setMunLayerEnabled(true)
     }
   }
 
@@ -331,6 +335,24 @@ const chartsCtl = initCharts((filterKey, item) => {
 ui.onApply(applyInputs)
 ui.onClear(clearFilters)
 ui.onLast30(clearFilters)
+ui.onUfSelect((value) => {
+  const uf = value ? String(value).trim().toUpperCase() : null
+  if (!uf) {
+    setFilters({ uf: null, mun: null })
+    setMunLayerEnabled(false)
+    setFilterUi()
+    mapCtl.fitBrazil()
+    refreshAllDebounced()
+    return
+  }
+
+  const changedUf = state.uf !== uf
+  setFilters({ uf, mun: changedUf ? null : state.mun })
+  setMunLayerEnabled(true)
+  setFilterUi()
+  void fetchBoundsAndFit('uf', uf)
+  refreshAllDebounced()
+})
 ui.onMunLayerToggle((checked) => {
   if (!state.uf) {
     setMunLayerEnabled(false)

@@ -75,12 +75,14 @@ label {
   letter-spacing: 0.05em;
 }
 
-input[type="date"] {
+input[type="date"],
+select {
   background: #0f1b31;
   color: var(--text);
   border: 1px solid #2e426b;
   border-radius: 8px;
   padding: 9px 11px;
+  min-height: 38px;
 }
 
 button {

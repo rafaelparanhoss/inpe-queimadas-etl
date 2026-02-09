@@ -28,6 +28,7 @@ export function toTitleCasePt(text) {
 export function initUi() {
   const elFrom = document.getElementById('from')
   const elTo = document.getElementById('to')
+  const elUfSelect = document.getElementById('ufSelect')
   const elApply = document.getElementById('apply')
   const elClear = document.getElementById('clear')
   const elLast30 = document.getElementById('last30')
@@ -54,6 +55,11 @@ export function initUi() {
     setInputs: ({ from, to }) => {
       elFrom.value = from
       elTo.value = to
+    },
+    onUfSelect: (fn) => elUfSelect.addEventListener('change', () => fn(elUfSelect.value)),
+    setUfSelect: (uf) => {
+      const next = uf ? String(uf).toUpperCase() : ''
+      elUfSelect.value = next
     },
     onApply: (fn) => elApply.addEventListener('click', fn),
     onClear: (fn) => elClear.addEventListener('click', fn),

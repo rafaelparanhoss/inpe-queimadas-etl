@@ -6,7 +6,7 @@ let legendControl
 let legendEl
 
 const BRAZIL_BOUNDS = [[-34.5, -74.5], [6.0, -28.0]]
-const FALLBACK_COLORS = ['#0b132b', '#93c5fd', '#60a5fa', '#3b82f6', '#2563eb', '#1d4ed8']
+const FALLBACK_COLORS = ['#1a1b2f', '#ffd166', '#fca311', '#f77f00', '#d62828', '#5a189a']
 
 function numberLabel(v) {
   const n = Number(v)
@@ -28,13 +28,31 @@ function toTitleCasePt(text) {
     .join(' ')
 }
 
+function sanitizeBreaks(rawBreaks, domain) {
+  const out = []
+  for (const value of rawBreaks) {
+    const n = Number(value)
+    if (!Number.isFinite(n)) continue
+    if (!out.length || n > out[out.length - 1]) {
+      out.push(n)
+    }
+  }
+  if (out.length >= 2) return out
+
+  const d0 = Number.isFinite(Number(domain?.[0])) ? Number(domain[0]) : 0
+  const d1Raw = Number.isFinite(Number(domain?.[1])) ? Number(domain[1]) : d0
+  const d1 = d1Raw > d0 ? d1Raw : d0 + 1
+  return [d0, d1]
+}
+
 function resolveLegendMeta(choro) {
-  const breaks = Array.isArray(choro?.breaks)
+  const rawBreaks = Array.isArray(choro?.breaks)
     ? choro.breaks.map((x) => Number(x)).filter((x) => Number.isFinite(x))
     : []
   const domain = Array.isArray(choro?.domain) && choro.domain.length === 2
     ? choro.domain.map((x) => Number(x))
     : [0, 0]
+  const breaks = sanitizeBreaks(rawBreaks, domain)
   const method = String(choro?.method || 'quantile')
   const unit = String(choro?.unit || 'focos')
   const zeroClass = Boolean(choro?.zero_class)
@@ -61,7 +79,7 @@ function getClassIndex(value, legendMeta) {
 
   const offset = legendMeta.zeroClass ? 1 : 0
   const lowerBound = Number(legendMeta.breaks[0])
-  if (Number.isFinite(lowerBound) && n <= lowerBound) {
+  if (Number.isFinite(lowerBound) && n < lowerBound) {
     return offset
   }
 
@@ -72,12 +90,12 @@ function getClassIndex(value, legendMeta) {
     if (!Number.isFinite(high)) {
       return offset + i
     }
-    if (n >= low && (n < high || isLast)) {
+    if ((n >= low && n < high) || (isLast && n >= low)) {
       return offset + i
     }
   }
 
-  return Math.max(0, legendMeta.palette.length - 1)
+  return offset + classes - 1
 }
 
 function colorForValue(value, legendMeta) {
