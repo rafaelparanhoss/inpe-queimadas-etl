@@ -17,6 +17,7 @@ from .geo import to_feature
 from .schemas import (
     BoundsResponse,
     ChoroplethWithLegendResponse,
+    GeoOverlayResponse,
     MunicipalityLookupResponse,
     SummaryResponse,
     TimeseriesResponse,
@@ -48,6 +49,7 @@ cache = make_ttl_cache()
 
 TopGroup = Literal["uf", "bioma", "mun", "uc", "ti"]
 BoundsEntity = Literal["uf", "mun", "bioma", "uc", "ti"]
+GeoEntity = Literal["uc", "ti"]
 TOP_GROUP_EXPR: dict[str, tuple[str, str]] = {
     "uf": ("uf::text", "uf::text"),
     "bioma": ("coalesce(cd_bioma::text, bioma)", "coalesce(bioma, cd_bioma::text)"),
@@ -343,6 +345,12 @@ def _geo_source(entity: BoundsEntity) -> dict[str, str] | None:
 
 def _is_geo_source_error(exc: Exception) -> bool:
     return isinstance(exc, (pg_errors.UndefinedTable, pg_errors.UndefinedColumn))
+
+
+def _fact_entity_columns(entity: GeoEntity) -> tuple[str, str]:
+    if entity == "uc":
+        return "cd_cnuc", "uc_nome"
+    return "terrai_cod", "ti_nome"
 
 
 @app.get("/health")
@@ -710,6 +718,116 @@ def bounds(
         key_cache,
         run,
         {"entity": entity, "key": key_norm, "uf": uf, "ms": now_ms() - t0},
+    )
+    return out
+
+
+@app.get("/api/geo", response_model=GeoOverlayResponse)
+def geo_overlay(
+    request: Request,
+    entity: GeoEntity = Query(...),
+    key: str = Query(...),
+    from_date: Optional[date] = Query(default=None, alias="from"),
+    to: Optional[date] = Query(default=None),
+    uf: Optional[str] = Query(default=None),
+    bioma: Optional[str] = Query(default=None),
+    mun: Optional[str] = Query(default=None),
+    uc: Optional[str] = Query(default=None),
+    ti: Optional[str] = Query(default=None),
+):
+    t0 = now_ms()
+    key_norm = _norm_text(key, upper=True)
+    if not key_norm:
+        raise HTTPException(status_code=400, detail="key is required")
+    if from_date is None or to is None:
+        from_date, to = _parse_default_range()
+    _validate_range(from_date, to)
+
+    source = _geo_source(entity)
+    if source is None:
+        raise HTTPException(status_code=404, detail="geometry source not configured")
+
+    geometry_key = f"/api/geo/shape?entity={entity}&key={key_norm}"
+
+    def run_geometry():
+        table = source["table"]
+        key_col = source["key_col"]
+        geom_col = source["geom_col"]
+        sql = f"""
+        select
+          {key_col}::text as key,
+          st_asgeojson(st_simplifypreservetopology({geom_col}, %(tol)s::float8))::jsonb as geom
+        from {table}
+        where {key_col}::text = %(key)s::text
+        limit 1;
+        """
+        with pool.connection() as conn:
+            with conn.cursor() as cur:
+                try:
+                    cur.execute(sql, {"key": key_norm, "tol": CHORO_SIMPLIFY_TOL})
+                    row = cur.fetchone()
+                except Exception as exc:  # pragma: no cover - depends on runtime DB schema
+                    if _is_geo_source_error(exc):
+                        raise HTTPException(status_code=404, detail="geometry source not configured") from exc
+                    raise
+        if not row:
+            raise HTTPException(status_code=404, detail=f"{entity} not found for key")
+        out_key, geom = row
+        if geom is None:
+            raise HTTPException(status_code=422, detail="geometry is null for key")
+        return {"key": str(out_key), "geometry": geom}
+
+    geometry_data = _cached(
+        "geo_overlay_shape",
+        geometry_key,
+        run_geometry,
+        {"entity": entity, "key": key_norm},
+    )
+
+    filters = _normalize_filters(uf, bioma, mun, uc, ti)
+    context_filters = dict(filters)
+    context_filters[entity] = key_norm
+    where_sql, params = _build_fact_where(from_date, to, context_filters)
+    key_col, label_col = _fact_entity_columns(entity)
+    params["entity_key"] = key_norm
+
+    sql = f"""
+    select
+      coalesce(max({label_col})::text, %(entity_key)s::text) as label,
+      coalesce(sum(n_focos), 0)::bigint as n_focos
+    from marts.mv_focos_day_dim
+    where {where_sql}
+      and {key_col}::text = %(entity_key)s::text;
+    """
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+            row = cur.fetchone()
+
+    label = str((row[0] if row else None) or geometry_data["key"])
+    n_focos = int(row[1] if row else 0)
+    feature = {
+        "type": "Feature",
+        "properties": {
+            "entity": entity,
+            "key": geometry_data["key"],
+            "label": label,
+            "n_focos": n_focos,
+        },
+        "geometry": geometry_data["geometry"],
+    }
+
+    out = {
+        "entity": entity,
+        "key": geometry_data["key"],
+        "geojson": {"type": "FeatureCollection", "features": [feature]},
+    }
+    logger.info(
+        "geo_overlay entity=%s key=%s filters=%s ms=%s",
+        entity,
+        key_norm,
+        _filters_payload(context_filters),
+        now_ms() - t0,
     )
     return out
 

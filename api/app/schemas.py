@@ -93,3 +93,9 @@ class BoundsResponse(BaseModel):
     key: str
     bbox: list[float]
     center: list[float]
+
+
+class GeoOverlayResponse(BaseModel):
+    entity: Literal["uc", "ti"]
+    key: str
+    geojson: dict[str, Any]
