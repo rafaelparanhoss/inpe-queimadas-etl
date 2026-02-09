@@ -188,6 +188,21 @@ function clusterCellSize(zoom) {
   return Math.max(8, Math.min(60, raw))
 }
 
+function overlapDebugEnabled() {
+  return typeof window !== 'undefined' && window.__DEBUG_OVERLAPS__ === true
+}
+
+function debugOverlap(message, payload) {
+  if (!overlapDebugEnabled()) return
+  console.debug(`[overlaps] ${message}`, payload)
+}
+
+function shortPointId(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  return raw.slice(0, 8)
+}
+
 function escapeHtml(text) {
   return String(text || '')
     .replaceAll('&', '&amp;')
@@ -245,9 +260,10 @@ function pointDetailHtml(point) {
   const tiItems = mergeMultiLabelKey(splitMulti(point.ti_label), splitMulti(point.ti_key))
   const uc = truncateList(ucItems, 2)
   const ti = truncateList(tiItems, 2)
-  const day = pointsDateLabel || '-'
+  const day = String(point.point_date || pointsDateLabel || '-')
+  const pointId = String(point.point_id || '').trim()
 
-  return [
+  const rows = [
     `<strong>Data:</strong> ${escapeHtml(day)}`,
     `<strong>Focos:</strong> ${numberLabel(n)}`,
     `<strong>UF:</strong> ${escapeHtml(uf)}`,
@@ -255,14 +271,33 @@ function pointDetailHtml(point) {
     `<strong>Bioma:</strong> ${escapeHtml(bioma)}`,
     `<strong>UC(s):</strong> ${escapeHtml(uc)}`,
     `<strong>TI(s):</strong> ${escapeHtml(ti)}`,
-  ].join('<br/>')
+  ]
+  if (pointId) {
+    rows.push(`<strong>ID:</strong> ${escapeHtml(pointId)}`)
+  }
+  return rows.join('<br/>')
 }
 
 function pointListLabel(point) {
+  const day = String(point.point_date || pointsDateLabel || '-')
   const mun = mergeLabelKey(point.mun_label, point.mun_key) || 'Sem municipio'
   const bioma = mergeLabelKey(point.bioma_label, point.bioma_key) || 'Sem bioma'
   const uf = String(point.uf || '').trim().toUpperCase() || '--'
-  return `${mun} | ${uf} | ${bioma}`
+  const pointId = shortPointId(point.point_id)
+  return `${day} — ${mun} | ${uf} | ${bioma}${pointId ? ` | #${pointId}` : ''}`
+}
+
+function overlapItemSummary(point, idx) {
+  return {
+    idx,
+    date: String(point.point_date || pointsDateLabel || ''),
+    point_id: point.point_id || null,
+    lat: Number(point.lat),
+    lon: Number(point.lon),
+    uf: point.uf || null,
+    mun_key: point.mun_key || null,
+    mun_label: point.mun_label || null,
+  }
 }
 
 function clusterListHtml(bucket) {
@@ -287,6 +322,36 @@ function clusterListHtml(bucket) {
       ${hiddenLine}
     </div>
   `
+}
+
+function bindClusterListPopup(marker, bucket) {
+  const popupEl = marker.getPopup()?.getElement()
+  if (!popupEl) return false
+  const listRoot = popupEl.querySelector('.scatterListWrap')
+  if (!listRoot) return true
+
+  listRoot.addEventListener('click', (ev) => {
+    const target = ev.target
+    if (!(target instanceof HTMLElement)) return
+    const btn = target.closest('.scatterItemBtn')
+    if (!(btn instanceof HTMLElement)) return
+    ev.preventDefault()
+    ev.stopPropagation()
+    const idx = Number(btn.getAttribute('data-idx'))
+    const point = bucket.items[idx]
+    debugOverlap('overlap item click', {
+      idx,
+      date: point?.point_date || pointsDateLabel || null,
+      point_id: point?.point_id || null,
+      lat: point?.lat,
+      lon: point?.lon,
+    })
+    if (!point) return
+    marker.setPopupContent(`<div class="scatterPointDetail">${pointDetailHtml(point)}</div>`)
+    marker.openPopup()
+  }, { once: true })
+
+  return true
 }
 
 function renderPointsClusters() {
@@ -357,22 +422,24 @@ function renderPointsClusters() {
       marker.on('click', () => {
         const maxZoom = map.getMaxZoom()
         if (zoom >= (maxZoom - 1)) {
+          debugOverlap('cluster open list', {
+            count: bucket.count,
+            hidden: bucket.hiddenItems || 0,
+            refs: {
+              eq01: bucket.items.length > 1 ? bucket.items[0] === bucket.items[1] : null,
+              eq12: bucket.items.length > 2 ? bucket.items[1] === bucket.items[2] : null,
+            },
+            items: bucket.items.map((item, idx) => overlapItemSummary(item, idx)),
+          })
           marker.setPopupContent(clusterListHtml(bucket))
           marker.openPopup()
-          marker.once('popupopen', () => {
-            const popupEl = marker.getPopup()?.getElement()
-            if (!popupEl) return
-            const buttons = popupEl.querySelectorAll('.scatterItemBtn')
-            buttons.forEach((btn) => {
-              btn.addEventListener('click', () => {
-                const idx = Number(btn.getAttribute('data-idx'))
-                const point = bucket.items[idx]
-                if (!point) return
-                marker.setPopupContent(`<div class="scatterPointDetail">${pointDetailHtml(point)}</div>`)
-                marker.openPopup()
-              }, { once: true })
+          const boundNow = bindClusterListPopup(marker, bucket)
+          if (!boundNow) {
+            marker.once('popupopen', () => {
+              const ok = bindClusterListPopup(marker, bucket)
+              debugOverlap('bind list on popupopen', { ok, count: bucket.count })
             })
-          })
+          }
           return
         }
         map.setView([lat, lon], Math.min(zoom + 2, maxZoom))
@@ -523,6 +590,8 @@ export function initMap(onFeaturePick) {
           lon: Number(p.lon),
           lat: Number(p.lat),
           n: Number(p.n) || 1,
+          point_date: p.point_date || payload?.date || null,
+          point_id: p.point_id || null,
           uf: p.uf || null,
           mun_key: p.mun_key || null,
           mun_label: p.mun_label || null,
