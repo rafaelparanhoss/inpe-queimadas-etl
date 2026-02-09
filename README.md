@@ -404,3 +404,56 @@ Checklist visual:
 - serie de 31 dias fica legivel no eixo X (sem sobreposicao total);
 - range de 2 a 12 meses nao bloqueia (ate 365 dias);
 - UC/TI desenha poligono coerente (sem encolhimento severo) e zoom cobre o shape.
+
+## v1.0 Checkpoint and Runbook (Windows)
+
+This repository was checkpointed at tag `v1.0` and branch `release/v1.0`.
+
+### Run from zero
+
+Terminal 1 (API):
+
+```powershell
+cd api
+python -m venv .venv
+.\.venv\Scripts\activate
+pip install -r requirements.txt
+copy .env.example .env
+# adjust DB_* and GEO_* in api\.env if needed
+& .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --log-level info
+```
+
+Terminal 2 (WEB):
+
+```powershell
+cd web
+& "C:\Program Files\nodejs\npm.cmd" install
+$env:VITE_API_BASE = "http://127.0.0.1:8000"
+& "C:\Program Files\nodejs\npm.cmd" run dev
+```
+
+If PowerShell blocks `npm.ps1`, run either:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+npm run dev
+```
+
+or keep using `npm.cmd` as shown above.
+
+### Smoke script
+
+With API running, execute:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\smoke.ps1 -BaseUrl "http://127.0.0.1:8000"
+```
+
+The script fails immediately when any expected endpoint returns status different from `200`.
+It checks:
+- `/health`
+- `/api/validate`
+- `/api/choropleth/uf`
+- `/api/choropleth/mun`
+- `/api/bounds` for `uf|uc|ti`
+- `/api/geo` for `uc|ti`
