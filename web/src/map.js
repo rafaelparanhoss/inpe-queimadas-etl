@@ -14,6 +14,7 @@ const BRAZIL_BOUNDS = [[-34.5, -74.5], [6.0, -28.0]]
 const FALLBACK_COLORS = ['#1a1b2f', '#ffd166', '#fca311', '#f77f00', '#d62828', '#5a189a']
 const CHOROPLETH_PANE = 'choroplethPane'
 const POINTS_PANE = 'pointsPane'
+const POINT_CLUSTER_LIST_MAX = 12
 
 function numberLabel(v) {
   const n = Number(v)
@@ -257,6 +258,37 @@ function pointDetailHtml(point) {
   ].join('<br/>')
 }
 
+function pointListLabel(point) {
+  const mun = mergeLabelKey(point.mun_label, point.mun_key) || 'Sem municipio'
+  const bioma = mergeLabelKey(point.bioma_label, point.bioma_key) || 'Sem bioma'
+  const uf = String(point.uf || '').trim().toUpperCase() || '--'
+  return `${mun} | ${uf} | ${bioma}`
+}
+
+function clusterListHtml(bucket) {
+  const items = Array.isArray(bucket.items) ? bucket.items : []
+  const rows = items
+    .slice(0, POINT_CLUSTER_LIST_MAX)
+    .map((point, idx) => (
+      `<button type="button" class="scatterItemBtn" data-idx="${idx}">${escapeHtml(pointListLabel(point))}</button>`
+    ))
+    .join('')
+
+  const hidden = Number(bucket.hiddenItems || 0)
+  const hiddenLine = hidden > 0
+    ? `<div class="scatterItemMore">+${numberLabel(hidden)} ponto(s) adicionais nesta celula</div>`
+    : ''
+
+  return `
+    <div class="scatterListWrap">
+      <div class="scatterListTitle">Pontos sobrepostos: ${numberLabel(bucket.count || items.length)}</div>
+      <div class="scatterListHint">Clique em um item para ver o detalhe.</div>
+      <div class="scatterList">${rows}</div>
+      ${hiddenLine}
+    </div>
+  `
+}
+
 function renderPointsClusters() {
   if (!pointsLayer) return
   pointsLayer.clearLayers()
@@ -290,6 +322,8 @@ function renderPointsClusters() {
         sumLat: lat,
         n,
         sample: p,
+        items: [p],
+        hiddenItems: 0,
       })
       continue
     }
@@ -297,6 +331,11 @@ function renderPointsClusters() {
     bucket.sumLon += lon
     bucket.sumLat += lat
     bucket.n += n
+    if (bucket.items.length < POINT_CLUSTER_LIST_MAX) {
+      bucket.items.push(p)
+    } else {
+      bucket.hiddenItems += 1
+    }
   }
 
   for (const bucket of buckets.values()) {
@@ -316,7 +355,27 @@ function renderPointsClusters() {
       marker.bindTooltip(`Pontos: ${numberLabel(count)}`, { sticky: true })
       marker.bindPopup(`Cluster: ${numberLabel(count)} focos`)
       marker.on('click', () => {
-        map.setView([lat, lon], Math.min(zoom + 2, 14))
+        const maxZoom = map.getMaxZoom()
+        if (zoom >= (maxZoom - 1)) {
+          marker.setPopupContent(clusterListHtml(bucket))
+          marker.openPopup()
+          marker.once('popupopen', () => {
+            const popupEl = marker.getPopup()?.getElement()
+            if (!popupEl) return
+            const buttons = popupEl.querySelectorAll('.scatterItemBtn')
+            buttons.forEach((btn) => {
+              btn.addEventListener('click', () => {
+                const idx = Number(btn.getAttribute('data-idx'))
+                const point = bucket.items[idx]
+                if (!point) return
+                marker.setPopupContent(`<div class="scatterPointDetail">${pointDetailHtml(point)}</div>`)
+                marker.openPopup()
+              }, { once: true })
+            })
+          })
+          return
+        }
+        map.setView([lat, lon], Math.min(zoom + 2, maxZoom))
       })
       pointsLayer.addLayer(marker)
       continue
