@@ -457,3 +457,31 @@ It checks:
 - `/api/choropleth/mun`
 - `/api/bounds` for `uf|uc|ti`
 - `/api/geo` for `uc|ti`
+
+### Fase 2.2 (Mapa Scatter com Guardrails)
+
+Novo endpoint:
+- `GET /api/points?date=YYYY-MM-DD&bbox=minLon,minLat,maxLon,maxLat&limit=20000&uf=&bioma=&mun=&uc=&ti=`
+
+Contrato de resposta:
+- `date`, `bbox`, `returned`, `limit`, `truncated`, `points[{lon,lat,n}]`
+
+Guardrails:
+- `date` e `bbox` obrigatorios.
+- `limit` default `20000` com hard cap `50000`.
+- Se o backend encontrar mais de `limit`, retorna apenas `limit` e `truncated=true`.
+- Cache curto por URL+bucket de zoom (`POINTS_CACHE_TTL_SECONDS`, default `30s`).
+
+Exemplos curl (Windows):
+
+```powershell
+curl.exe -s "http://127.0.0.1:8000/api/points?date=2025-08-01&bbox=-61.0,-16.5,-55.0,-10.0&limit=5000"
+curl.exe -s "http://127.0.0.1:8000/api/points?date=2025-08-01&bbox=-74,-34,-34,6&limit=20000"
+```
+
+Validacao:
+- `scripts/smoke.ps1` agora testa `/api/points` e falha se `returned > limit`.
+- No frontend, toggle **Pontos (MVP)**:
+  - recarrega em `moveend/zoomend` com debounce,
+  - usa clustering no cliente,
+  - mostra badge de truncamento quando `truncated=true`.

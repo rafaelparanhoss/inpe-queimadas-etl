@@ -38,6 +38,13 @@ Write-Host "Running smoke against $BaseUrl from=$From to=$To"
 Invoke-Status200 "$BaseUrl/health"
 Invoke-Status200 "$BaseUrl/api/validate?from=$From&to=$To"
 Invoke-Status200 "$BaseUrl/api/choropleth/uf?from=$From&to=$To"
+Invoke-Status200 "$BaseUrl/api/points?date=$From&bbox=-61.0,-16.5,-55.0,-10.0&limit=5000"
+
+$points = Get-Json "$BaseUrl/api/points?date=$From&bbox=-61.0,-16.5,-55.0,-10.0&limit=5000"
+if ([int]$points.returned -gt [int]$points.limit) {
+    throw "Points returned greater than limit"
+}
+Write-Host ("points returned={0} limit={1} truncated={2}" -f $points.returned, $points.limit, $points.truncated)
 
 $topUf = Get-Json "$BaseUrl/api/top?group=uf&from=$From&to=$To&limit=1"
 $ufKey = $null
