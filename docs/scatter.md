@@ -51,3 +51,11 @@ Com pontos ativos, o tooltip/popup do ponto mostra:
 - TI(s)
 
 Listas longas (UC/TI) sao truncadas visualmente com `+N`.
+
+## Pontos sobrepostos (spiderfy/lista)
+
+Quando varios pontos caem na mesma celula de cluster:
+
+- Em zoom normal, o clique no agregado continua aproximando o mapa.
+- No zoom maximo (ou quase maximo), o clique abre uma lista de pontos sobrepostos.
+- Cada item da lista abre o detalhe individual do ponto no popup.
