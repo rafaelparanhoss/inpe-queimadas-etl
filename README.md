@@ -362,3 +362,45 @@ Validacao visual:
 - clique em Top UCs: aparece overlay da UC e zoom no poligono;
 - clique em Top TIs: aparece overlay da TI e zoom no poligono;
 - limpar filtros: overlay some.
+
+### Fase 2.0 (Timeseries legivel + Range 365d + Overlay UC/TI robusto)
+
+Melhorias aplicadas:
+- eixo X da serie temporal com reducao automatica de ticks:
+  - `n<=14`: mostra todos
+  - `15..45`: ~9 ticks
+  - `>45`: maximo 10 ticks
+- labels do eixo em formato curto (`MM-DD` para dia/semana) e tooltip com data completa;
+- range global permitido ate `365` dias (`APP_MAX_RANGE_DAYS`, default `365`);
+- `GET /api/timeseries/total` passa a retornar `granularity`:
+  - `day` ate `92` dias
+  - `week` entre `93` e `273`
+  - `month` acima de `273`
+- `/api/geo` com geometria valida e simplificacao em metros (via 3857), com tolerancia adaptativa por area;
+- endpoint QA opcional: `GET /api/geo/qa?entity=uc|ti&key=...`.
+
+#### Curls Fase 2.0
+
+Timeseries 365 dias (verificar `granularity`):
+```powershell
+curl.exe -s "http://127.0.0.1:8001/api/timeseries/total?from=2025-01-01&to=2026-01-01"
+```
+
+Geo overlay UC/TI:
+```powershell
+curl.exe -s "http://127.0.0.1:8001/api/geo?entity=uc&key=0000.00.0001"
+curl.exe -s "http://127.0.0.1:8001/api/geo?entity=uc&key=<outra_uc_existente>"
+curl.exe -s "http://127.0.0.1:8001/api/geo?entity=ti&key=10001"
+curl.exe -s "http://127.0.0.1:8001/api/geo?entity=ti&key=<outra_ti_existente>"
+```
+
+QA de geometria (npoints/area/validade/bbox):
+```powershell
+curl.exe -s "http://127.0.0.1:8001/api/geo/qa?entity=uc&key=0000.00.0001"
+curl.exe -s "http://127.0.0.1:8001/api/geo/qa?entity=ti&key=10001"
+```
+
+Checklist visual:
+- serie de 31 dias fica legivel no eixo X (sem sobreposicao total);
+- range de 2 a 12 meses nao bloqueia (ate 365 dias);
+- UC/TI desenha poligono coerente (sem encolhimento severo) e zoom cobre o shape.
