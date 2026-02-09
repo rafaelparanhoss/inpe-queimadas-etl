@@ -16,7 +16,7 @@ html, body {
   background: radial-gradient(circle at 0 0, #1a2744 0%, var(--bg) 55%);
   color: var(--text);
   font-family: "Segoe UI Variable", "Segoe UI", "Inter", system-ui, sans-serif;
-  font-size: 14px;
+  font-size: 16px;
 }
 
 #app {
@@ -25,8 +25,8 @@ html, body {
 }
 
 .panel {
-  width: 470px;
-  padding: 16px;
+  width: clamp(460px, 32vw, 520px);
+  padding: 20px;
   overflow: auto;
   border-right: 1px solid var(--card-border);
   background: linear-gradient(180deg, #0f1a30 0%, #0d1729 100%);
@@ -45,17 +45,17 @@ html, body {
 .card {
   background: var(--card-bg);
   border: 1px solid var(--card-border);
-  border-radius: 14px;
-  padding: 14px;
-  margin-bottom: 12px;
+  border-radius: 16px;
+  padding: 18px;
+  margin-bottom: 14px;
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.2);
 }
 
 .row {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   align-items: end;
-  margin-top: 10px;
+  margin-top: 12px;
   flex-wrap: wrap;
 }
 
@@ -63,12 +63,12 @@ html, body {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  min-width: 120px;
+  gap: 6px;
+  min-width: 132px;
 }
 
 label {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   text-transform: uppercase;
   color: var(--muted);
@@ -80,18 +80,19 @@ select {
   background: #0f1b31;
   color: var(--text);
   border: 1px solid #2e426b;
-  border-radius: 8px;
-  padding: 9px 11px;
-  min-height: 38px;
+  border-radius: 10px;
+  padding: 11px 12px;
+  min-height: 44px;
+  font-size: 14px;
 }
 
 button {
-  padding: 9px 11px;
-  border-radius: 8px;
+  padding: 11px 14px;
+  border-radius: 10px;
   border: 1px solid #2e426b;
   background: #142544;
   color: var(--text);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   cursor: pointer;
 }
@@ -103,8 +104,8 @@ button:hover {
 .toggleWrap {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 13px;
+  gap: 8px;
+  font-size: 14px;
   color: var(--text);
 }
 
@@ -113,33 +114,33 @@ button:hover {
 }
 
 #munLayerHint {
-  margin-top: 4px;
+  margin-top: 6px;
   color: var(--muted);
 }
 
 .meta {
-  margin-top: 12px;
-  font-size: 13px;
+  margin-top: 14px;
+  font-size: 15px;
   color: var(--text);
   display: grid;
-  gap: 5px;
+  gap: 7px;
 }
 
 .small {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
 }
 
 .chips {
-  margin-top: 10px;
+  margin-top: 12px;
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
 }
 
 .chip {
-  font-size: 11px;
-  padding: 5px 9px;
+  font-size: 13px;
+  padding: 6px 10px;
   border-radius: 999px;
   border: 1px solid #365389;
   background: #1b2f57;
@@ -147,29 +148,29 @@ button:hover {
 }
 
 .chipMuted {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
 }
 
 .section {
   border: 1px solid var(--card-border);
-  border-radius: 14px;
+  border-radius: 16px;
   background: #101b32;
-  margin-bottom: 12px;
-  padding: 6px 10px 0;
+  margin-bottom: 14px;
+  padding: 8px 12px 2px;
 }
 
 .section > summary {
   cursor: pointer;
   font-weight: 700;
-  font-size: 14px;
+  font-size: 17px;
   color: #d8e5ff;
-  padding: 7px 2px;
+  padding: 9px 4px;
 }
 
 h3 {
-  margin: 0 0 10px;
-  font-size: 15px;
+  margin: 0 0 12px;
+  font-size: 18px;
   font-weight: 700;
   letter-spacing: 0.03em;
 }
@@ -182,21 +183,21 @@ h3 {
 
 .kpi {
   border: 1px solid #2b3f65;
-  border-radius: 10px;
-  padding: 10px;
+  border-radius: 12px;
+  padding: 12px;
   background: #12213f;
 }
 
 .kpiLabel {
-  font-size: 11px;
+  font-size: 13px;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--muted);
 }
 
 .kpiValue {
-  margin-top: 5px;
-  font-size: 21px;
+  margin-top: 7px;
+  font-size: 26px;
   font-weight: 700;
   line-height: 1.2;
 }
@@ -210,20 +211,20 @@ h3 {
 .miniTable {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .miniTable th,
 .miniTable td {
   border-bottom: 1px solid #273a60;
-  padding: 7px 4px;
+  padding: 9px 6px;
   text-align: left;
 }
 
 .miniTable th {
   color: #b8caea;
   text-transform: uppercase;
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.05em;
 }
 
@@ -313,7 +314,7 @@ h3 {
 
   .panel {
     width: auto;
-    max-height: 58%;
+    max-height: 56%;
     border-right: none;
     border-bottom: 1px solid var(--card-border);
   }

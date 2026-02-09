@@ -14,15 +14,26 @@ export function toTitleCasePt(text) {
   if (text === null || text === undefined) return ''
   const base = String(text).trim()
   if (!base) return ''
+  let wordIndex = 0
   return base
-    .split(/\s+/)
-    .map((raw, idx) => {
-      if (/^[A-Z0-9]{2,}$/.test(raw)) return raw
-      const lower = raw.toLowerCase()
-      if (idx > 0 && PT_SMALL_WORDS.has(lower)) return lower
+    .split(/(\s+|[-/])/)
+    .map((token) => {
+      if (!token || /^\s+$/.test(token) || token === '-' || token === '/') {
+        return token
+      }
+      if (/^[A-ZÀ-Ý0-9]{2,}$/.test(token)) {
+        wordIndex += 1
+        return token
+      }
+      const lower = token.toLowerCase()
+      if (wordIndex > 0 && PT_SMALL_WORDS.has(lower)) {
+        wordIndex += 1
+        return lower
+      }
+      wordIndex += 1
       return lower.charAt(0).toUpperCase() + lower.slice(1)
     })
-    .join(' ')
+    .join('')
 }
 
 export function initUi() {
