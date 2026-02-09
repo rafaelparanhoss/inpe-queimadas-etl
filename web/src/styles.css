@@ -132,6 +132,21 @@ button:hover {
   justify-content: space-between;
 }
 
+.pointsSemantics {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid #2a3f68;
+  border-radius: 10px;
+  background: rgba(13, 24, 45, 0.75);
+  display: grid;
+  gap: 4px;
+  line-height: 1.35;
+}
+
+.pointsSemantics strong {
+  color: #dbeafe;
+}
+
 .pointsDateRow {
   margin-top: 8px;
 }

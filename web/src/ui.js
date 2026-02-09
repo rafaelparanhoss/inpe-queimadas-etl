@@ -166,13 +166,17 @@ export function initUi() {
       const limit = Number(payload.limit || 0)
       const truncated = Boolean(payload.truncated)
       const dateTxt = String(payload.date || '-')
-      const bboxTxt = Array.isArray(payload.bbox)
-        ? payload.bbox.map((x) => Number(x).toFixed(2)).join(', ')
-        : '-'
-      elPointsMeta.textContent = `Data: ${dateTxt}
-Retornados: ${formatInt(returned)} / limite ${formatInt(limit)}
-Truncado: ${truncated ? 'sim' : 'nao'}
-BBox: ${bboxTxt}`
+      const lines = [
+        `Dia dos pontos: ${dateTxt}`,
+        `Pontos carregados: ${formatInt(returned)}`,
+      ]
+      if (truncated) {
+        lines.push(`Amostra ativa: limite ${formatInt(limit)}.`)
+      }
+      if (returned === 0) {
+        lines.push('0 pontos nesse dia para os filtros atuais.')
+      }
+      elPointsMeta.textContent = lines.join('\n')
     },
     setPointsBadge: (payload) => {
       if (!payload) {

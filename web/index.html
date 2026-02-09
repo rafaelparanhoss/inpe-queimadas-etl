@@ -78,13 +78,17 @@
             </label>
             <span id="pointsBadge" class="pill hidden"></span>
           </div>
+          <div class="small pointsSemantics">
+            <div><strong>Choropleth:</strong> total no periodo [from,to).</div>
+            <div><strong>Pontos:</strong> dia selecionado (snapshot diario).</div>
+          </div>
           <div class="row pointsDateRow">
             <div class="col">
               <label>Dia dos Pontos</label>
               <select id="pointsDateMode">
-                <option value="peak_day">peak_day</option>
-                <option value="from">from</option>
-                <option value="custom">custom</option>
+                <option value="peak_day">Dia de Pico (no Periodo)</option>
+                <option value="from">Primeiro Dia do Periodo</option>
+                <option value="custom">Escolher Dia</option>
               </select>
             </div>
             <div class="col" id="pointsCustomCol">
@@ -92,7 +96,7 @@
               <input id="pointsDateCustom" type="date" />
             </div>
           </div>
-          <div class="small" id="pointsHint">Pontos usam 1 dia (from) e bbox visivel do mapa.</div>
+          <div class="small" id="pointsHint">Pontos sao exibidos para um unico dia.</div>
           <div class="small pointsMeta" id="pointsMeta"></div>
 
           <div id="activeChips" class="chips"></div>

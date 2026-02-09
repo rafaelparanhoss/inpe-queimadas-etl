@@ -76,10 +76,16 @@ function isSingleDayRange(from, to) {
   return addDaysIso(from, 1) === to
 }
 
+function pointsDateSourceLabel(source) {
+  if (source === 'peak_day') return 'dia de pico no periodo'
+  if (source === 'custom') return 'dia custom'
+  return 'primeiro dia do periodo'
+}
+
 function resolvePointsDate(from, to, summary) {
-  if (!from) return { date: null, source: 'from', info: 'MVP: pontos usam um unico dia.' }
+  if (!from) return { date: null, source: 'from' }
   if (isSingleDayRange(from, to)) {
-    return { date: from, source: 'from', info: `Pontos (MVP): dia = ${from} (from).` }
+    return { date: from, source: 'from' }
   }
 
   const mode = state.ui?.pointsDateMode || 'peak_day'
@@ -87,16 +93,16 @@ function resolvePointsDate(from, to, summary) {
   const custom = state.ui?.pointsDateCustom ? String(state.ui.pointsDateCustom) : null
 
   if (mode === 'from') {
-    return { date: from, source: 'from', info: `Pontos (MVP): dia = ${from} (from).` }
+    return { date: from, source: 'from' }
   }
   if (mode === 'custom') {
     const picked = custom || peak || from
-    return { date: picked, source: custom ? 'custom' : (peak ? 'peak_day' : 'from'), info: `Pontos (MVP): dia = ${picked} (${custom ? 'custom' : (peak ? 'peak_day' : 'from')}).` }
+    return { date: picked, source: custom ? 'custom' : (peak ? 'peak_day' : 'from') }
   }
 
   const picked = peak || from
   const source = peak ? 'peak_day' : 'from'
-  return { date: picked, source, info: `Pontos (MVP): dia = ${picked} (${source}).` }
+  return { date: picked, source }
 }
 
 function setFilterUi() {
@@ -118,7 +124,7 @@ function setFilterUi() {
     customVisible: !singleDay && pointsMode === 'custom',
     disabled: singleDay,
   })
-  ui.setPointsHint('Pontos (MVP): viewport atual + filtros; 1 dia por requisicao.')
+  ui.setPointsHint('Pontos sao exibidos para um unico dia.')
   if (!showPoints) {
     ui.setPointsBadge(null)
     ui.setPointsMeta(null)
@@ -285,7 +291,7 @@ async function refreshPointsLayer() {
     console.debug('points bbox', bboxCsv, 'zoom', mapCtl.getZoom())
   }
 
-  const { date, info } = resolvePointsDate(from, to, latestSummary)
+  const { date, source } = resolvePointsDate(from, to, latestSummary)
   if (!date) return ''
 
   const abort = startPointsRequestCycle()
@@ -295,10 +301,14 @@ async function refreshPointsLayer() {
     mapCtl.setPointsData(payload)
     ui.setPointsBadge(payload)
     ui.setPointsMeta(payload)
+    const sourceLabel = pointsDateSourceLabel(source)
+    const baseInfo = `Dia dos pontos: ${date} (${sourceLabel}).`
     if (payload.truncated) {
-      ui.setPointsHint(`${info} Exibindo amostra (limit=${payload.limit}) - aproxime o zoom.`)
+      ui.setPointsHint(`${baseInfo} Exibindo amostra (limit=${payload.limit}) - aproxime o zoom.`)
+    } else if (Number(payload.returned || 0) === 0) {
+      ui.setPointsHint(`${baseInfo} 0 pontos nesse dia para os filtros atuais.`)
     } else {
-      ui.setPointsHint(info || 'Pontos (MVP): 1 dia por requisicao.')
+      ui.setPointsHint(baseInfo)
     }
   } catch (err) {
     if (err?.name === 'AbortError') return ''
