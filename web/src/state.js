@@ -9,6 +9,8 @@ export const state = {
   ui: {
     showMunLayer: false,
     showPoints: false,
+    pointsDateMode: 'peak_day',
+    pointsDateCustom: null,
   },
   abort: null,
 }

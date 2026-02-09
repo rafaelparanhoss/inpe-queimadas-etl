@@ -78,6 +78,20 @@
             </label>
             <span id="pointsBadge" class="pill hidden"></span>
           </div>
+          <div class="row pointsDateRow">
+            <div class="col">
+              <label>Dia dos Pontos</label>
+              <select id="pointsDateMode">
+                <option value="peak_day">peak_day</option>
+                <option value="from">from</option>
+                <option value="custom">custom</option>
+              </select>
+            </div>
+            <div class="col" id="pointsCustomCol">
+              <label>Data Custom</label>
+              <input id="pointsDateCustom" type="date" />
+            </div>
+          </div>
           <div class="small" id="pointsHint">Pontos usam 1 dia (from) e bbox visivel do mapa.</div>
           <div class="small pointsMeta" id="pointsMeta"></div>
 

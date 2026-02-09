@@ -63,6 +63,7 @@ function startRequestCycle() {
 }
 
 let pointsAbort = null
+let latestSummary = null
 
 function startPointsRequestCycle() {
   if (pointsAbort) pointsAbort.abort()
@@ -70,13 +71,32 @@ function startPointsRequestCycle() {
   return pointsAbort
 }
 
-function resolvePointsDate(from, to) {
-  if (!from) return { date: null, note: '' }
-  const expectedTo = addDaysIso(from, 1)
-  if (to === expectedTo) {
-    return { date: from, note: '' }
+function isSingleDayRange(from, to) {
+  if (!from || !to) return false
+  return addDaysIso(from, 1) === to
+}
+
+function resolvePointsDate(from, to, summary) {
+  if (!from) return { date: null, source: 'from', info: 'MVP: pontos usam um unico dia.' }
+  if (isSingleDayRange(from, to)) {
+    return { date: from, source: 'from', info: `Pontos (MVP): dia = ${from} (from).` }
   }
-  return { date: from, note: 'MVP: pontos para 1 dia (from).' }
+
+  const mode = state.ui?.pointsDateMode || 'peak_day'
+  const peak = summary?.peak_day ? String(summary.peak_day) : null
+  const custom = state.ui?.pointsDateCustom ? String(state.ui.pointsDateCustom) : null
+
+  if (mode === 'from') {
+    return { date: from, source: 'from', info: `Pontos (MVP): dia = ${from} (from).` }
+  }
+  if (mode === 'custom') {
+    const picked = custom || peak || from
+    return { date: picked, source: custom ? 'custom' : (peak ? 'peak_day' : 'from'), info: `Pontos (MVP): dia = ${picked} (${custom ? 'custom' : (peak ? 'peak_day' : 'from')}).` }
+  }
+
+  const picked = peak || from
+  const source = peak ? 'peak_day' : 'from'
+  return { date: picked, source, info: `Pontos (MVP): dia = ${picked} (${source}).` }
 }
 
 function setFilterUi() {
@@ -84,12 +104,21 @@ function setFilterUi() {
   const ufSelected = Boolean(filters.uf)
   const showMunLayer = Boolean(state.ui?.showMunLayer && ufSelected)
   const showPoints = Boolean(state.ui?.showPoints)
+  const singleDay = isSingleDayRange(state.from, state.to)
+  const pointsMode = state.ui?.pointsDateMode || 'peak_day'
+  const pointsCustom = state.ui?.pointsDateCustom || ''
   ui.setUfSelect(filters.uf)
   ui.setFilterLabels(filters)
   ui.setActiveChips(filters)
   ui.setMunLayerToggle({ enabled: ufSelected, checked: showMunLayer })
   ui.setPointsToggle({ checked: showPoints })
-  ui.setPointsHint('Pontos usam 1 dia (from) e bbox visivel do mapa.')
+  ui.setPointsDateControls({
+    mode: singleDay ? 'from' : pointsMode,
+    customDate: pointsCustom,
+    customVisible: !singleDay && pointsMode === 'custom',
+    disabled: singleDay,
+  })
+  ui.setPointsHint('Pontos (MVP): viewport atual + filtros; 1 dia por requisicao.')
   if (!showPoints) {
     ui.setPointsBadge(null)
     ui.setPointsMeta(null)
@@ -256,7 +285,7 @@ async function refreshPointsLayer() {
     console.debug('points bbox', bboxCsv, 'zoom', mapCtl.getZoom())
   }
 
-  const { date, note } = resolvePointsDate(from, to)
+  const { date, info } = resolvePointsDate(from, to, latestSummary)
   if (!date) return ''
 
   const abort = startPointsRequestCycle()
@@ -266,12 +295,10 @@ async function refreshPointsLayer() {
     mapCtl.setPointsData(payload)
     ui.setPointsBadge(payload)
     ui.setPointsMeta(payload)
-    if (note) {
-      ui.setPointsHint(note)
-    } else if (payload.truncated) {
-      ui.setPointsHint(`Exibindo amostra (limit=${payload.limit}) - aproxime o zoom.`)
+    if (payload.truncated) {
+      ui.setPointsHint(`${info} Exibindo amostra (limit=${payload.limit}) - aproxime o zoom.`)
     } else {
-      ui.setPointsHint('Pontos usam 1 dia (from) e bbox visivel do mapa.')
+      ui.setPointsHint(info || 'Pontos (MVP): 1 dia por requisicao.')
     }
   } catch (err) {
     if (err?.name === 'AbortError') return ''
@@ -384,6 +411,7 @@ async function refreshAll() {
     ui.setTopUc(topUc.items)
     ui.setTopTi(topTi.items)
     ui.setKpis(summary)
+    latestSummary = summary
     ui.setTotal(tot.n_focos)
     ui.setMunGuardrail(topMun.note || '')
 
@@ -457,8 +485,11 @@ function clearFilters() {
   }
   if (state.ui) {
     state.ui.showPoints = false
+    state.ui.pointsDateMode = 'peak_day'
+    state.ui.pointsDateCustom = null
   }
   pendingOverlayFocus = null
+  latestSummary = null
   setState({ from, to })
   ui.setInputs({ from, to })
   mapCtl.clearSelectionOverlay()
@@ -541,6 +572,30 @@ ui.onPointsToggle((checked) => {
     return
   }
   void refreshPointsLayer()
+})
+ui.onPointsDateMode((mode) => {
+  if (!state.ui) return
+  if (isSingleDayRange(state.from, state.to)) {
+    state.ui.pointsDateMode = 'from'
+    setFilterUi()
+    return
+  }
+  state.ui.pointsDateMode = mode || 'peak_day'
+  if (state.ui.pointsDateMode !== 'custom') {
+    state.ui.pointsDateCustom = null
+  }
+  setFilterUi()
+  if (state.ui.showPoints) {
+    void refreshPointsLayer()
+  }
+})
+ui.onPointsDateCustom((dateIso) => {
+  if (!state.ui) return
+  state.ui.pointsDateCustom = dateIso || null
+  setFilterUi()
+  if (state.ui.showPoints && state.ui.pointsDateMode === 'custom') {
+    void refreshPointsLayer()
+  }
 })
 ui.onChipRemove((filterKey) => {
   if (filterKey === 'uf') {

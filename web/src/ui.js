@@ -47,6 +47,9 @@ export function initUi() {
   const elMunLayerHint = document.getElementById('munLayerHint')
   const elShowPoints = document.getElementById('showPoints')
   const elPointsBadge = document.getElementById('pointsBadge')
+  const elPointsDateMode = document.getElementById('pointsDateMode')
+  const elPointsDateCustom = document.getElementById('pointsDateCustom')
+  const elPointsCustomCol = document.getElementById('pointsCustomCol')
   const elPointsHint = document.getElementById('pointsHint')
   const elPointsMeta = document.getElementById('pointsMeta')
   const ufLabel = document.getElementById('ufLabel')
@@ -81,6 +84,8 @@ export function initUi() {
     onLast30: (fn) => elLast30.addEventListener('click', fn),
     onMunLayerToggle: (fn) => elShowMunLayer.addEventListener('change', () => fn(elShowMunLayer.checked)),
     onPointsToggle: (fn) => elShowPoints.addEventListener('change', () => fn(elShowPoints.checked)),
+    onPointsDateMode: (fn) => elPointsDateMode.addEventListener('change', () => fn(elPointsDateMode.value)),
+    onPointsDateCustom: (fn) => elPointsDateCustom.addEventListener('change', () => fn(elPointsDateCustom.value)),
     onChipRemove: (fn) => chips.addEventListener('click', (ev) => {
       const target = ev.target
       if (!(target instanceof HTMLElement)) return
@@ -140,6 +145,14 @@ export function initUi() {
     },
     setPointsToggle: ({ checked }) => {
       elShowPoints.checked = Boolean(checked)
+    },
+    setPointsDateControls: ({ mode, customDate, customVisible, disabled }) => {
+      const safeMode = mode || 'peak_day'
+      elPointsDateMode.value = safeMode
+      elPointsDateMode.disabled = Boolean(disabled)
+      elPointsDateCustom.value = customDate || ''
+      elPointsDateCustom.disabled = Boolean(disabled || !customVisible)
+      elPointsCustomCol.classList.toggle('hidden', !customVisible)
     },
     setPointsHint: (text) => {
       elPointsHint.textContent = text || ''

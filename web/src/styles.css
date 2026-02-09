@@ -132,6 +132,14 @@ button:hover {
   justify-content: space-between;
 }
 
+.pointsDateRow {
+  margin-top: 8px;
+}
+
+#pointsCustomCol.hidden {
+  display: none !important;
+}
+
 #pointsHint {
   margin-top: 6px;
   color: var(--muted);
