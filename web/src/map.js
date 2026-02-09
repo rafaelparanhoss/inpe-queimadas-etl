@@ -565,7 +565,16 @@ export function initMap(onFeaturePick) {
             onFeaturePick('mun', String(key), String(label))
           })
         } else {
-          lyr.on('click', () => onFeaturePick('uf', uf, uf))
+          lyr.on('click', (ev) => {
+            const bounds = ev?.target?.getBounds?.() || lyr.getBounds?.()
+            if (bounds && bounds.isValid()) {
+              map.fitBounds(bounds, {
+                padding: [28, 28],
+                maxZoom: 8,
+              })
+            }
+            onFeaturePick('uf', uf, uf)
+          })
         }
       }
 
