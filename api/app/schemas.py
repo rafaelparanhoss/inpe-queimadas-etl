@@ -42,10 +42,11 @@ class ChoroplethWithLegendResponse(BaseModel):
     to: date
     geojson: dict[str, Any]
     breaks: list[float]
-    scale: Literal["quantile"]
+    domain: list[float]
+    method: Literal["quantile"]
+    unit: Literal["focos"]
+    zero_class: bool
     palette: list[str]
-    min: float
-    max: float
     note: str | None = None
 
 

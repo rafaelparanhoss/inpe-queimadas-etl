@@ -55,14 +55,13 @@ TOP_GROUP_EXPR: dict[str, tuple[str, str]] = {
     "ti": ("coalesce(terrai_cod::text, ti_nome)", "coalesce(ti_nome, terrai_cod::text)"),
 }
 
-CHORO_PALETTE = [
-    "#0f172a",
-    "#1d4ed8",
+CHORO_ZERO_COLOR = "#0b132b"
+CHORO_QUANTILE_COLORS = [
+    "#93c5fd",
+    "#60a5fa",
+    "#3b82f6",
     "#2563eb",
-    "#0ea5e9",
-    "#10b981",
-    "#f59e0b",
-    "#ef4444",
+    "#1d4ed8",
 ]
 MUN_GUARDRAIL_LIMIT = 10
 CHORO_MAX_DAYS_MUN = int(os.getenv("CHORO_MAX_DAYS_MUN", "180"))
@@ -189,19 +188,60 @@ def _quantile(sorted_values: list[int], q: float) -> float:
     return float(sorted_values[idx])
 
 
-def _build_breaks(values: list[int], classes: int = 6) -> tuple[list[float], float, float]:
+def _palette_for_breaks(k: int, zero_class: bool) -> list[str]:
+    classes = max(1, int(k))
+    quantile_colors = CHORO_QUANTILE_COLORS[:classes]
+    if len(quantile_colors) < classes:
+        quantile_colors += [CHORO_QUANTILE_COLORS[-1]] * (classes - len(quantile_colors))
+    if zero_class:
+        return [CHORO_ZERO_COLOR] + quantile_colors
+    return quantile_colors
+
+
+def compute_breaks(
+    values: list[int],
+    method: str = "quantile",
+    k: int = 5,
+    zero_class: bool = True,
+) -> dict[str, object]:
+    if method != "quantile":
+        raise HTTPException(status_code=500, detail=f"unsupported breaks method: {method}")
+
+    classes = max(1, int(k))
     if not values:
-        return [0.0] * classes, 0.0, 0.0
-    min_v = float(min(values))
-    max_v = float(max(values))
-    positives = sorted(v for v in values if v > 0)
-    if not positives:
-        return [0.0] * classes, min_v, max_v
-    breaks = []
-    for i in range(1, classes + 1):
-        q = i / classes
-        breaks.append(_quantile(positives, q))
-    return breaks, min_v, max_v
+        return {
+            "breaks": [0.0 for _ in range(classes + 1)],
+            "domain": [0.0, 0.0],
+            "method": "quantile",
+            "unit": "focos",
+            "zero_class": bool(zero_class),
+            "palette": _palette_for_breaks(classes, bool(zero_class)),
+        }
+
+    safe_values = [int(v) for v in values]
+    has_zero_or_less = any(v <= 0 for v in safe_values)
+    positive_values = sorted(v for v in safe_values if v > 0)
+    use_zero_class = bool(zero_class and has_zero_or_less)
+
+    # Zero class is represented separately in legend; quantiles are computed on positive values.
+    if use_zero_class and positive_values:
+        sample = positive_values
+    else:
+        sample = sorted(safe_values)
+
+    breaks = [_quantile(sample, i / classes) for i in range(classes + 1)]
+    for i in range(1, len(breaks)):
+        if breaks[i] < breaks[i - 1]:
+            breaks[i] = breaks[i - 1]
+
+    return {
+        "breaks": breaks,
+        "domain": [float(min(safe_values)), float(max(safe_values))],
+        "method": "quantile",
+        "unit": "focos",
+        "zero_class": use_zero_class,
+        "palette": _palette_for_breaks(classes, use_zero_class),
+    }
 
 
 _IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -340,18 +380,15 @@ def choropleth_uf(
                 )
             )
 
-        breaks, min_v, max_v = _build_breaks(values, classes=len(CHORO_PALETTE) - 1)
+        legend = compute_breaks(values, method="quantile", k=5, zero_class=True)
         fc = {"type": "FeatureCollection", "features": features}
-        return {
+        out = {
             "from": from_date,
             "to": to,
             "geojson": fc,
-            "breaks": breaks,
-            "scale": "quantile",
-            "palette": CHORO_PALETTE,
-            "min": min_v,
-            "max": max_v,
         }
+        out.update(legend)
+        return out
 
     out = _cached(
         "choropleth_uf",
@@ -455,19 +492,16 @@ def choropleth_mun(
                 }
             )
 
-        breaks, min_v, max_v = _build_breaks(values, classes=len(CHORO_PALETTE) - 1)
+        legend = compute_breaks(values, method="quantile", k=5, zero_class=True)
         fc = {"type": "FeatureCollection", "features": features}
-        return {
+        out = {
             "from": from_date,
             "to": to,
             "geojson": fc,
-            "breaks": breaks,
-            "scale": "quantile",
-            "palette": CHORO_PALETTE,
-            "min": min_v,
-            "max": max_v,
             "note": f"municipal layer simplified (tol={CHORO_SIMPLIFY_TOL})",
         }
+        out.update(legend)
+        return out
 
     out = _cached(
         "choropleth_mun",
