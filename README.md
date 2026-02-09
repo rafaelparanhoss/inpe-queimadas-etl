@@ -191,20 +191,53 @@ Novidades desta fase:
   - Se range exceder `CHORO_MAX_DAYS_MUN` (default `180`), retorna `400`.
   - Se fonte municipal nao estiver configurada, retorna `501 geometry source not configured`.
 
+#### Legenda dinamica (breaks)
+
+Os endpoints de choropleth (`/api/choropleth/uf` e `/api/choropleth/mun`) retornam metadados para simbologia:
+
+- `breaks`: limites de classe calculados no backend
+- `domain`: `[min,max]` dos valores no payload
+- `method`: `quantile`
+- `unit`: `focos`
+- `zero_class`: `true|false` (quando zero fica em classe separada)
+- `palette`: cores utilizadas no mapa
+
+Metodo padrao:
+- quantis com `k=5` classes
+- quando ha valores zero e valores positivos, zero pode ser tratado como classe separada (`zero_class=true`) e os quantis sao calculados sobre valores `> 0`
+
 #### Variaveis GEO_* (api/.env)
 
-Configure as fontes de geometria conforme suas tabelas reais:
+Padrao recomendado (ja configurado em `api/.env.example`):
 
-- `GEO_UF_TABLE`, `GEO_UF_KEY_COL`, `GEO_UF_GEOM_COL`
-- `GEO_MUN_TABLE`, `GEO_MUN_KEY_COL`, `GEO_MUN_UF_COL`, `GEO_MUN_GEOM_COL`
-- `GEO_BIOMA_TABLE`, `GEO_BIOMA_KEY_COL`, `GEO_BIOMA_GEOM_COL` (opcional)
-- `GEO_UC_TABLE`, `GEO_UC_KEY_COL`, `GEO_UC_GEOM_COL` (opcional)
-- `GEO_TI_TABLE`, `GEO_TI_KEY_COL`, `GEO_TI_GEOM_COL` (opcional)
-- `CHORO_MAX_DAYS_MUN` (default `180`)
-- `CHORO_SIMPLIFY_TOL` (default `0.01`)
+- `GEO_UF_TABLE=public.geo_uf`
+- `GEO_UF_KEY_COL=uf`
+- `GEO_UF_GEOM_COL=geom`
+- `GEO_MUN_TABLE=public.geo_mun`
+- `GEO_MUN_KEY_COL=cd_mun`
+- `GEO_MUN_UF_COL=uf`
+- `GEO_MUN_GEOM_COL=geom`
+- `GEO_BIOMA_TABLE=public.geo_bioma`
+- `GEO_BIOMA_KEY_COL=key`
+- `GEO_BIOMA_GEOM_COL=geom`
+- `GEO_UC_TABLE=public.geo_uc`
+- `GEO_UC_KEY_COL=key`
+- `GEO_UC_GEOM_COL=geom`
+- `GEO_TI_TABLE=public.geo_ti`
+- `GEO_TI_KEY_COL=key`
+- `GEO_TI_GEOM_COL=geom`
+- `CHORO_MAX_DAYS_MUN=180`
+- `CHORO_SIMPLIFY_TOL=0.01`
 
-Template de views padrao:
-- `docs/sql/geo_sources_template.sql`
+Aplicar views de geometria:
+
+```powershell
+docker exec -i geoetl_postgis psql -U geoetl -d geoetl -f /work/docs/sql/geo_sources_apply.sql
+```
+
+Arquivos SQL:
+- `docs/sql/geo_sources_apply.sql` (views usadas pela API)
+- `docs/sql/geo_sources_template.sql` (template para adaptar a outras fontes)
 
 Como descobrir tabelas/colunas de geometria no PostGIS:
 ```sql
@@ -226,8 +259,18 @@ Smoke tests:
 curl.exe -s "http://127.0.0.1:8001/health"
 curl.exe -s "http://127.0.0.1:8001/api/choropleth/uf?from=2025-08-01&to=2025-09-01"
 curl.exe -s "http://127.0.0.1:8001/api/bounds?entity=uf&key=MT"
-curl.exe -s "http://127.0.0.1:8001/api/bounds?entity=mun&key=5103403"
+curl.exe -s "http://127.0.0.1:8001/api/bounds?entity=mun&key=5103254"
+curl.exe -s "http://127.0.0.1:8001/api/bounds?entity=bioma&key=1"
 curl.exe -s "http://127.0.0.1:8001/api/choropleth/mun?from=2025-08-01&to=2025-09-01&uf=MT"
+```
+
+Validar metadados de legenda (PowerShell):
+```powershell
+$uf = curl.exe -s "http://127.0.0.1:8001/api/choropleth/uf?from=2025-08-01&to=2025-09-01" | ConvertFrom-Json
+$uf | Select-Object breaks, domain, method, unit, zero_class
+
+$mun = curl.exe -s "http://127.0.0.1:8001/api/choropleth/mun?from=2025-08-01&to=2025-09-01&uf=MT" | ConvertFrom-Json
+$mun | Select-Object breaks, domain, method, unit, zero_class
 ```
 
 Subir web:
