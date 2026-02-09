@@ -56,13 +56,13 @@ TOP_GROUP_EXPR: dict[str, tuple[str, str]] = {
     "ti": ("coalesce(terrai_cod::text, ti_nome)", "coalesce(ti_nome, terrai_cod::text)"),
 }
 
-CHORO_ZERO_COLOR = "#0b132b"
+CHORO_ZERO_COLOR = "#1a1b2f"
 CHORO_QUANTILE_COLORS = [
-    "#93c5fd",
-    "#60a5fa",
-    "#3b82f6",
-    "#2563eb",
-    "#1d4ed8",
+    "#ffd166",
+    "#fca311",
+    "#f77f00",
+    "#d62828",
+    "#5a189a",
 ]
 MUN_GUARDRAIL_LIMIT = 10
 CHORO_MAX_DAYS_MUN = int(os.getenv("CHORO_MAX_DAYS_MUN", "180"))
