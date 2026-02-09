@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+from psycopg import Connection
 from psycopg_pool import ConnectionPool
 
 
@@ -32,4 +33,10 @@ def make_pool(cfg: DbConfig) -> ConnectionPool:
         f"host={cfg.host} port={cfg.port} dbname={cfg.name} "
         f"user={cfg.user} password={cfg.password} sslmode={cfg.sslmode}"
     )
-    return ConnectionPool(conninfo=dsn, min_size=1, max_size=10, timeout=10)
+
+    def _configure(conn: Connection) -> None:
+        with conn.cursor() as cur:
+            cur.execute("SET SESSION client_encoding TO 'UTF8'")
+        conn.commit()
+
+    return ConnectionPool(conninfo=dsn, min_size=1, max_size=10, timeout=10, configure=_configure)

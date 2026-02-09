@@ -108,9 +108,17 @@ class GeoOverlayQaResponse(BaseModel):
     entity: Literal["uc", "ti"]
     key: str
     label: str
-    tol_m: float
-    area_m2: float
-    is_valid: bool
-    npoints_original: int
-    npoints_simplified: int
+    simplify_param_received: int
+    tol_m_received: float
+    simplify_applied: bool
+    n_parts_before_union: int
+    area_m2_union_before: float
+    area_m2_union_after: float
+    is_valid_before: bool
+    is_valid_after: bool
+    npoints_before_union: int
+    npoints_out: int
+    bbox_ratio: float | None = None
+    warning_bbox_ratio: bool
+    coords_hash: str
     bbox: list[float]

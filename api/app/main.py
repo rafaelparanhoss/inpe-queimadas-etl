@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import os
 import re
+import unicodedata
 from datetime import date, timedelta
 from typing import Callable, Literal, Optional
 
@@ -73,6 +76,7 @@ TS_WEEK_THRESHOLD_DAYS = int(os.getenv("TS_WEEK_THRESHOLD_DAYS", "92"))
 TS_MONTH_THRESHOLD_DAYS = int(os.getenv("TS_MONTH_THRESHOLD_DAYS", "273"))
 CHORO_MAX_DAYS_MUN = int(os.getenv("CHORO_MAX_DAYS_MUN", "180"))
 CHORO_SIMPLIFY_TOL = float(os.getenv("CHORO_SIMPLIFY_TOL", "0.01"))
+GEO_SIMPLIFY_DEFAULT_TOL_M = float(os.getenv("GEO_SIMPLIFY_DEFAULT_TOL_M", "10.0"))
 
 
 def _validate_range(from_date: date, to: date) -> None:
@@ -102,6 +106,24 @@ def _cached(name: str, key: str, run: Callable[[], dict], context: dict[str, obj
         cache[key] = out
     logger.info("%s cache=%s %s", name, "hit" if hit else "miss", context)
     return out
+
+
+def _log_db_encoding_once() -> None:
+    try:
+        with pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SHOW server_encoding;")
+                server_row = cur.fetchone()
+                cur.execute("SHOW client_encoding;")
+                client_row = cur.fetchone()
+        server_encoding = str(server_row[0]) if server_row else "unknown"
+        client_encoding = str(client_row[0]) if client_row else "unknown"
+        logger.info("db_encoding server=%s client=%s", server_encoding, client_encoding)
+    except Exception as exc:  # pragma: no cover - startup diagnostics
+        logger.warning("db_encoding_check_failed err=%s", exc)
+
+
+_log_db_encoding_once()
 
 
 def _norm_text(value: Optional[str], *, upper: bool = False) -> Optional[str]:
@@ -287,7 +309,10 @@ def compute_breaks(
 
 def _legend_breaks_monotonic(values: list[int]) -> bool:
     legend = compute_breaks(values, method="quantile", k=5, zero_class=True)
-    breaks = [float(x) for x in legend.get("breaks", [])]
+    raw_breaks = legend.get("breaks")
+    if not isinstance(raw_breaks, list):
+        return False
+    breaks = [float(x) for x in raw_breaks]
     return _is_strictly_increasing(breaks)
 
 
@@ -365,7 +390,54 @@ def _timeseries_granularity(days: int) -> Literal["day", "week", "month"]:
     return "day"
 
 
-def _load_geo_shape_metrics(source: dict[str, str], key_norm: str) -> dict[str, object]:
+def _ascii_label(text: str) -> str:
+    return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+
+
+def _clean_display_label(label: str) -> str:
+    out = str(label or "").strip()
+    if not out:
+        return out
+
+    repl = chr(0xFFFD)
+    bad_triplet = "\u00ef\u00bf\u00bd"
+    has_mojibake = repl in out or bad_triplet in out
+
+    # Attempt recovery for UTF-8 bytes decoded as latin1.
+    try:
+        recoded = out.encode("latin1").decode("utf-8")
+        if recoded and recoded != out and repl not in recoded:
+            out = recoded
+            has_mojibake = repl in out or bad_triplet in out
+    except UnicodeError:
+        pass
+
+    if not has_mojibake:
+        return out
+
+    sao = "S\u00e3o"
+    sao_low = "s\u00e3o"
+    patched = out
+    patched = patched.replace(f"S{repl}o", sao).replace(f"s{repl}o", sao_low)
+    patched = patched.replace(f"S{bad_triplet}o", sao).replace(f"s{bad_triplet}o", sao_low)
+    patched = patched.replace(repl, "a").replace(bad_triplet, "a")
+    if repl in patched or bad_triplet in patched:
+        patched = _ascii_label(patched)
+    return patched
+
+
+def _coords_hash(geometry: object) -> str:
+    payload = json.dumps(geometry, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def _load_geo_shape_metrics(
+    source: dict[str, str],
+    key_norm: str,
+    *,
+    simplify: bool,
+    tol_m: float,
+) -> dict[str, object]:
     table = source["table"]
     key_col = source["key_col"]
     geom_col = source["geom_col"]
@@ -379,85 +451,84 @@ def _load_geo_shape_metrics(source: dict[str, str], key_norm: str) -> dict[str, 
     with src as (
       select
         {key_col}::text as key,
-        {geom_col} as geom_raw
+        case
+          when {geom_col} is null then null
+          when st_srid({geom_col}) in (4326, 4674) then st_transform({geom_col}, 4326)
+          when st_srid({geom_col}) = 0 then st_setsrid({geom_col}, 4326)
+          else st_transform({geom_col}, 4326)
+        end as geom_raw
       from {table}
       where {key_col}::text = %(key)s::text
-      limit 1
     ),
-    norm as (
-      select
-        key,
-        st_collectionextract(
-          st_makevalid(
-            case
-              when st_srid(geom_raw) in (4326, 4674) then st_transform(geom_raw, 4326)
-              when st_srid(geom_raw) = 0 then st_setsrid(geom_raw, 4326)
-              else st_transform(geom_raw, 4326)
-            end
-          ),
-          3
-        ) as geom
+    parts as (
+      select key, geom_raw
       from src
+      where geom_raw is not null and not st_isempty(geom_raw)
     ),
-    ready as (
+    agg as (
       select
-        key,
-        geom,
-        st_area(geom::geography) as area_m2,
-        st_isvalid(geom) as is_valid,
-        st_npoints(geom) as npoints_original
-      from norm
-      where geom is not null and not st_isempty(geom)
-    ),
-    simp as (
-      select
-        key,
-        area_m2,
-        is_valid,
-        npoints_original,
-        case
-          when area_m2 < 500000000 then 50.0
-          when area_m2 < 5000000000 then 150.0
-          else 300.0
-        end as tol_m,
-        geom
-      from ready
-    ),
-    geom_s as (
-      select
-        key,
-        area_m2,
-        is_valid,
-        npoints_original,
-        tol_m,
+        %(key)s::text as key,
+        count(*)::int as n_parts_before_union,
         st_collectionextract(
           st_makevalid(
-            st_transform(
-              st_simplifypreservetopology(
-                st_transform(geom, 3857),
-                tol_m
-              ),
-              4326
-            )
+            st_unaryunion(st_collect(geom_raw))
           ),
           3
-        ) as geom
-      from simp
+        ) as base_geom
+      from parts
+    ),
+    base as (
+      select
+        key,
+        n_parts_before_union,
+        base_geom,
+        st_isvalid(base_geom) as is_valid_before,
+        st_npoints(base_geom)::bigint as npoints_before,
+        st_area(base_geom::geography)::float8 as area_before
+      from agg
+      where base_geom is not null and not st_isempty(base_geom)
+    ),
+    outg as (
+      select
+        key,
+        n_parts_before_union,
+        is_valid_before,
+        npoints_before,
+        area_before,
+        case
+          when %(simplify)s::int = 1 then
+            st_collectionextract(
+              st_makevalid(
+                st_transform(
+                  st_simplifypreservetopology(
+                    st_transform(base_geom, 3857),
+                    %(tol_m)s::float8
+                  ),
+                  4326
+                )
+              ),
+              3
+            )
+          else base_geom
+        end as geom_out
+      from base
     )
     select
       key,
-      area_m2::float8,
-      tol_m::float8,
-      is_valid,
-      npoints_original::bigint,
-      st_npoints(geom)::bigint as npoints_simplified,
-      st_xmin(st_envelope(geom))::float8 as minx,
-      st_ymin(st_envelope(geom))::float8 as miny,
-      st_xmax(st_envelope(geom))::float8 as maxx,
-      st_ymax(st_envelope(geom))::float8 as maxy,
-      st_asgeojson(geom)::jsonb as geom_json
-    from geom_s
-    where geom is not null and not st_isempty(geom)
+      n_parts_before_union::int,
+      is_valid_before,
+      st_isvalid(geom_out) as is_valid_after,
+      npoints_before::bigint,
+      st_npoints(geom_out)::bigint as npoints_out,
+      area_before::float8,
+      st_area(geom_out::geography)::float8 as area_after,
+      st_xmin(st_envelope(geom_out))::float8 as minx,
+      st_ymin(st_envelope(geom_out))::float8 as miny,
+      st_xmax(st_envelope(geom_out))::float8 as maxx,
+      st_ymax(st_envelope(geom_out))::float8 as maxy,
+      st_asgeojson(geom_out)::jsonb as geom_json
+    from outg
+    where geom_out is not null and not st_isempty(geom_out)
     limit 1;
     """
     with pool.connection() as conn:
@@ -466,7 +537,7 @@ def _load_geo_shape_metrics(source: dict[str, str], key_norm: str) -> dict[str, 
                 cur.execute(sql_exists, {"key": key_norm})
                 if cur.fetchone() is None:
                     raise HTTPException(status_code=404, detail="geometry not found for key")
-                cur.execute(sql, {"key": key_norm})
+                cur.execute(sql, {"key": key_norm, "simplify": 1 if simplify else 0, "tol_m": tol_m})
                 row = cur.fetchone()
             except Exception as exc:  # pragma: no cover - depends on runtime DB schema
                 if _is_geo_source_error(exc):
@@ -474,16 +545,65 @@ def _load_geo_shape_metrics(source: dict[str, str], key_norm: str) -> dict[str, 
                 raise
     if not row:
         raise HTTPException(status_code=422, detail="geometry is null or invalid for key")
+
+    bbox = [float(row[8]), float(row[9]), float(row[10]), float(row[11])]
+    area_after = float(row[7])
+    bbox_area = _bbox_area(bbox)
+    bbox_ratio = float(bbox_area / max(area_after, 1e-12))
     return {
         "key": str(row[0]),
-        "area_m2": float(row[1]),
-        "tol_m": float(row[2]),
-        "is_valid": bool(row[3]),
-        "npoints_original": int(row[4]),
-        "npoints_simplified": int(row[5]),
-        "bbox": [float(row[6]), float(row[7]), float(row[8]), float(row[9])],
-        "geometry": row[10],
+        "n_parts_before_union": int(row[1]),
+        "is_valid_before": bool(row[2]),
+        "is_valid_after": bool(row[3]),
+        "npoints_before_union": int(row[4]),
+        "npoints_out": int(row[5]),
+        "area_m2_union_before": float(row[6]),
+        "area_m2_union_after": area_after,
+        "bbox": bbox,
+        "bbox_ratio": bbox_ratio,
+        "warning_bbox_ratio": bool(bbox_ratio > 50.0),
+        "simplify_applied": bool(simplify),
+        "tol_m_used": float(tol_m if simplify else 0.0),
+        "geometry": row[12],
+        "coords_hash": _coords_hash(row[12]),
     }
+
+
+def _load_geo_labels(entity: GeoEntity, keys: list[str]) -> dict[str, str]:
+    if not keys:
+        return {}
+    source = _geo_source(entity)
+    if source is None:
+        return {}
+
+    table = source["table"]
+    key_col = source["key_col"]
+    sql = f"""
+    select
+      {key_col}::text as key,
+      max(coalesce(label::text, {key_col}::text))::text as label
+    from {table}
+    where {key_col}::text = any(%(keys)s::text[])
+    group by 1;
+    """
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            try:
+                cur.execute(sql, {"keys": keys})
+                rows = cur.fetchall()
+            except Exception as exc:  # pragma: no cover - depends on runtime DB schema
+                if _is_geo_source_error(exc) or isinstance(exc, pg_errors.UndefinedFunction):
+                    return {}
+                if isinstance(exc, pg_errors.UndefinedColumn):
+                    return {}
+                raise
+
+    out: dict[str, str] = {}
+    for row in rows:
+        key_val = str(row[0])
+        label_val = str(row[1]) if row[1] is not None and str(row[1]).strip() else key_val
+        out[key_val] = _clean_display_label(label_val)
+    return out
 
 
 def _bbox_area(bbox: list[float]) -> float:
@@ -506,11 +626,11 @@ def _load_bounds_bbox(
 ) -> list[float]:
     # Keep UC/TI bounds aligned with /api/geo geometry pipeline and cache key.
     if entity in ("uc", "ti"):
-        geometry_key = f"/api/geo/shape?entity={entity}&key={key_norm}"
+        geometry_key = f"/api/geo/shape?entity={entity}&key={key_norm}&simplify=0&tol_m=0.000000"
         metrics = _cached(
             "geo_overlay_shape",
             geometry_key,
-            lambda: _load_geo_shape_metrics(source, key_norm),
+            lambda: _load_geo_shape_metrics(source, key_norm, simplify=False, tol_m=0.0),
             {"entity": entity, "key": key_norm},
         )
         return [float(x) for x in metrics["bbox"]]
@@ -899,6 +1019,8 @@ def geo_overlay(
     request: Request,
     entity: GeoEntity = Query(...),
     key: str = Query(...),
+    simplify: int = Query(default=1, ge=0, le=1),
+    tol_m: Optional[float] = Query(default=None, ge=0.0),
     from_date: Optional[date] = Query(default=None, alias="from"),
     to: Optional[date] = Query(default=None),
     uf: Optional[str] = Query(default=None),
@@ -914,21 +1036,28 @@ def geo_overlay(
     if from_date is None or to is None:
         from_date, to = _parse_default_range()
     _validate_range(from_date, to)
+    simplify_flag = bool(int(simplify))
+    tol_value = float(tol_m if tol_m is not None else GEO_SIMPLIFY_DEFAULT_TOL_M)
+    if tol_value < 0:
+        raise HTTPException(status_code=400, detail="tol_m must be >= 0")
 
     source = _geo_source(entity)
     if source is None:
         raise HTTPException(status_code=404, detail="geometry source not configured")
 
-    geometry_key = f"/api/geo/shape?entity={entity}&key={key_norm}"
+    geometry_key = (
+        f"/api/geo/shape?entity={entity}&key={key_norm}"
+        f"&simplify={1 if simplify_flag else 0}&tol_m={tol_value:.6f}"
+    )
 
     def run_geometry():
-        return _load_geo_shape_metrics(source, key_norm)
+        return _load_geo_shape_metrics(source, key_norm, simplify=simplify_flag, tol_m=tol_value)
 
     geometry_data = _cached(
         "geo_overlay_shape",
         geometry_key,
         run_geometry,
-        {"entity": entity, "key": key_norm},
+        {"entity": entity, "key": key_norm, "simplify": simplify_flag, "tol_m": tol_value},
     )
 
     filters = _normalize_filters(uf, bioma, mun, uc, ti)
@@ -951,7 +1080,10 @@ def geo_overlay(
             cur.execute(sql, params)
             row = cur.fetchone()
 
-    label = str((row[0] if row else None) or key_norm)
+    source_labels = _load_geo_labels(entity, [key_norm])
+    source_label = source_labels.get(key_norm)
+    fact_label = str((row[0] if row else None) or key_norm)
+    label = _clean_display_label(source_label or fact_label)
     n_focos = int(row[1] if row else 0)
     feature = {
         "type": "Feature",
@@ -984,32 +1116,51 @@ def geo_overlay_qa(
     request: Request,
     entity: GeoEntity = Query(...),
     key: str = Query(...),
+    simplify: int = Query(default=1, ge=0, le=1),
+    tol_m: Optional[float] = Query(default=None, ge=0.0),
 ):
     t0 = now_ms()
     key_norm = _norm_text(key)
     if not key_norm:
         raise HTTPException(status_code=400, detail="key is required")
+    simplify_flag = bool(int(simplify))
+    tol_value = float(tol_m if tol_m is not None else GEO_SIMPLIFY_DEFAULT_TOL_M)
+    if tol_value < 0:
+        raise HTTPException(status_code=400, detail="tol_m must be >= 0")
     source = _geo_source(entity)
     if source is None:
         raise HTTPException(status_code=404, detail="geometry source not configured")
 
-    geometry_key = f"/api/geo/shape?entity={entity}&key={key_norm}"
+    geometry_key = (
+        f"/api/geo/shape?entity={entity}&key={key_norm}"
+        f"&simplify={1 if simplify_flag else 0}&tol_m={tol_value:.6f}"
+    )
 
     metrics = _cached(
         "geo_overlay_shape",
         geometry_key,
-        lambda: _load_geo_shape_metrics(source, key_norm),
-        {"entity": entity, "key": key_norm},
+        lambda: _load_geo_shape_metrics(source, key_norm, simplify=simplify_flag, tol_m=tol_value),
+        {"entity": entity, "key": key_norm, "simplify": simplify_flag, "tol_m": tol_value},
     )
+    source_labels = _load_geo_labels(entity, [key_norm])
+    source_label = source_labels.get(key_norm)
     out = {
         "entity": entity,
         "key": key_norm,
-        "label": key_norm,
-        "tol_m": float(metrics["tol_m"]),
-        "area_m2": float(metrics["area_m2"]),
-        "is_valid": bool(metrics["is_valid"]),
-        "npoints_original": int(metrics["npoints_original"]),
-        "npoints_simplified": int(metrics["npoints_simplified"]),
+        "label": _clean_display_label(source_label or str(key_norm)),
+        "simplify_param_received": int(simplify),
+        "tol_m_received": float(tol_value),
+        "simplify_applied": bool(metrics["simplify_applied"]),
+        "n_parts_before_union": int(metrics["n_parts_before_union"]),
+        "area_m2_union_before": float(metrics["area_m2_union_before"]),
+        "area_m2_union_after": float(metrics["area_m2_union_after"]),
+        "is_valid_before": bool(metrics["is_valid_before"]),
+        "is_valid_after": bool(metrics["is_valid_after"]),
+        "npoints_before_union": int(metrics["npoints_before_union"]),
+        "npoints_out": int(metrics["npoints_out"]),
+        "bbox_ratio": float(metrics["bbox_ratio"]),
+        "warning_bbox_ratio": bool(metrics["warning_bbox_ratio"]),
+        "coords_hash": str(metrics["coords_hash"]),
         "bbox": [float(x) for x in metrics["bbox"]],
     }
     logger.info("geo_overlay_qa entity=%s key=%s ms=%s", entity, key_norm, now_ms() - t0)
@@ -1133,10 +1284,19 @@ def top(
             with conn.cursor() as cur:
                 cur.execute(sql, params)
                 rows = cur.fetchall()
+        geo_labels: dict[str, str] = {}
+        rank_keys = [str(r[0]) for r in rows if r[0] is not None]
+        if group == "uc":
+            geo_labels = _load_geo_labels("uc", rank_keys)
+        elif group == "ti":
+            geo_labels = _load_geo_labels("ti", rank_keys)
         items = []
         for k, lbl, v in rows:
             key_val = str(k)
             label_val = str(lbl) if lbl is not None and str(lbl).strip() else key_val
+            if group == "uc" or group == "ti":
+                label_val = geo_labels.get(key_val, label_val)
+            label_val = _clean_display_label(label_val)
             items.append({"key": key_val, "label": label_val, "n_focos": int(v or 0)})
         return {"group": group, "items": items, "note": note}
 
@@ -1375,11 +1535,13 @@ def validate(
             source = _geo_source(qa_entity)
             if source is not None:
                 try:
-                    geometry_key = f"/api/geo/shape?entity={qa_entity}&key={qa_key}"
+                    geometry_key = (
+                        f"/api/geo/shape?entity={qa_entity}&key={qa_key}&simplify=0&tol_m=0.000000"
+                    )
                     metrics = _cached(
                         "geo_overlay_shape",
                         geometry_key,
-                        lambda: _load_geo_shape_metrics(source, qa_key),
+                        lambda: _load_geo_shape_metrics(source, qa_key, simplify=False, tol_m=0.0),
                         {"entity": qa_entity, "key": qa_key},
                     )
                     geo_bbox = [float(x) for x in metrics["bbox"]]
