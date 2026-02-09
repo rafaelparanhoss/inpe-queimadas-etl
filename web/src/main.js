@@ -67,13 +67,30 @@ function setFilterUi() {
 async function fetchBoundsAndFit(filterKey, value) {
   const entity = entityForFilter(filterKey)
   if (!entity || !value) return
+  const filters = pickFilters()
   try {
-    const bounds = await api.fetchBounds(entity, value, pickFilters())
+    const bounds = await api.fetchBounds(entity, value, filters)
     mapCtl.fitToBbox(bounds.bbox)
   } catch (err) {
     const msg = String(err?.message || err)
+    const fallbackUf = filters.uf && filterKey !== 'uf' ? filters.uf : null
+    if (fallbackUf) {
+      try {
+        const ufBounds = await api.fetchBounds('uf', fallbackUf, filters)
+        mapCtl.fitToBbox(ufBounds.bbox)
+        ui.setStatus('Bounds da camada indisponivel; zoom aplicado no UF selecionado.')
+        return
+      } catch {
+        mapCtl.fitBrazil()
+      }
+    } else {
+      mapCtl.fitBrazil()
+    }
+
     if (msg.includes('geometry source not configured')) {
       ui.setStatus('Fonte de geometria nao configurada para fit bounds.')
+    } else if (msg.includes('geometry not found')) {
+      ui.setStatus('Bounds nao encontrados para o item selecionado.')
     }
   }
 }

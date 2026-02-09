@@ -1,11 +1,10 @@
 :root {
   color-scheme: dark;
   --bg: #0b1220;
-  --panel-bg: #111a2e;
   --card-bg: #16233d;
   --card-border: #24314f;
-  --text: #e6edf8;
-  --muted: #9fb0cf;
+  --text: #e9effc;
+  --muted: #a9bbdc;
   --accent: #4f8cff;
   --accent-2: #38bdf8;
   --warn: #f59e0b;
@@ -16,7 +15,8 @@ html, body {
   margin: 0;
   background: radial-gradient(circle at 0 0, #1a2744 0%, var(--bg) 55%);
   color: var(--text);
-  font-family: "Segoe UI", "Inter", system-ui, sans-serif;
+  font-family: "Segoe UI Variable", "Segoe UI", "Inter", system-ui, sans-serif;
+  font-size: 14px;
 }
 
 #app {
@@ -25,8 +25,8 @@ html, body {
 }
 
 .panel {
-  width: 460px;
-  padding: 14px;
+  width: 470px;
+  padding: 16px;
   overflow: auto;
   border-right: 1px solid var(--card-border);
   background: linear-gradient(180deg, #0f1a30 0%, #0d1729 100%);
@@ -45,17 +45,17 @@ html, body {
 .card {
   background: var(--card-bg);
   border: 1px solid var(--card-border);
-  border-radius: 12px;
-  padding: 12px;
-  margin-bottom: 10px;
+  border-radius: 14px;
+  padding: 14px;
+  margin-bottom: 12px;
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.2);
 }
 
 .row {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   align-items: end;
-  margin-top: 8px;
+  margin-top: 10px;
   flex-wrap: wrap;
 }
 
@@ -68,9 +68,11 @@ html, body {
 }
 
 label {
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
   color: var(--muted);
-  letter-spacing: 0.02em;
+  letter-spacing: 0.05em;
 }
 
 input[type="date"] {
@@ -78,15 +80,17 @@ input[type="date"] {
   color: var(--text);
   border: 1px solid #2e426b;
   border-radius: 8px;
-  padding: 8px 10px;
+  padding: 9px 11px;
 }
 
 button {
-  padding: 8px 10px;
+  padding: 9px 11px;
   border-radius: 8px;
   border: 1px solid #2e426b;
   background: #142544;
   color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -112,11 +116,11 @@ button:hover {
 }
 
 .meta {
-  margin-top: 10px;
+  margin-top: 12px;
   font-size: 13px;
   color: var(--text);
   display: grid;
-  gap: 4px;
+  gap: 5px;
 }
 
 .small {
@@ -132,8 +136,8 @@ button:hover {
 }
 
 .chip {
-  font-size: 12px;
-  padding: 4px 8px;
+  font-size: 11px;
+  padding: 5px 9px;
   border-radius: 999px;
   border: 1px solid #365389;
   background: #1b2f57;
@@ -147,23 +151,25 @@ button:hover {
 
 .section {
   border: 1px solid var(--card-border);
-  border-radius: 12px;
+  border-radius: 14px;
   background: #101b32;
-  margin-bottom: 10px;
-  padding: 5px 8px 0;
+  margin-bottom: 12px;
+  padding: 6px 10px 0;
 }
 
 .section > summary {
   cursor: pointer;
-  font-weight: 600;
+  font-weight: 700;
+  font-size: 14px;
   color: #d8e5ff;
-  padding: 6px 2px;
+  padding: 7px 2px;
 }
 
 h3 {
-  margin: 0 0 8px;
+  margin: 0 0 10px;
   font-size: 15px;
-  letter-spacing: 0.02em;
+  font-weight: 700;
+  letter-spacing: 0.03em;
 }
 
 .kpiGrid {
@@ -175,18 +181,20 @@ h3 {
 .kpi {
   border: 1px solid #2b3f65;
   border-radius: 10px;
-  padding: 9px;
+  padding: 10px;
   background: #12213f;
 }
 
 .kpiLabel {
-  font-size: 12px;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
   color: var(--muted);
 }
 
 .kpiValue {
-  margin-top: 4px;
-  font-size: 19px;
+  margin-top: 5px;
+  font-size: 21px;
   font-weight: 700;
   line-height: 1.2;
 }
@@ -200,7 +208,7 @@ h3 {
 .miniTable {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .miniTable th,
@@ -212,6 +220,9 @@ h3 {
 
 .miniTable th {
   color: #b8caea;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.05em;
 }
 
 .miniTable th.num,
@@ -241,16 +252,23 @@ h3 {
   background: rgba(9, 14, 27, 0.9);
   border: 1px solid #2a3d61;
   border-radius: 10px;
-  padding: 8px 10px;
+  padding: 9px 10px;
   color: #dce8ff;
   font-size: 12px;
-  line-height: 1.35;
-  min-width: 148px;
+  line-height: 1.38;
+  min-width: 170px;
 }
 
 .map-legend .title {
   font-weight: 700;
+  letter-spacing: 0.02em;
   margin-bottom: 6px;
+}
+
+.map-legend .sub {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 3px;
 }
 
 .map-legend .item {
@@ -272,11 +290,18 @@ h3 {
   background: #0b1324;
   color: #e5efff;
   border: 1px solid #2c4269;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
   box-shadow: none;
 }
 
 .leaflet-tooltip:before {
   border-top-color: #2c4269;
+}
+
+.leaflet-container {
+  font-family: "Segoe UI Variable", "Segoe UI", "Inter", system-ui, sans-serif;
 }
 
 @media (max-width: 1180px) {
