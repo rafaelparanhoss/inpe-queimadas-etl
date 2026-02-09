@@ -37,6 +37,18 @@ class ChoroplethResponse(BaseModel):
     features: dict[str, Any]
 
 
+class ChoroplethWithLegendResponse(BaseModel):
+    from_date: date = Field(alias="from")
+    to: date
+    geojson: dict[str, Any]
+    breaks: list[float]
+    scale: Literal["quantile"]
+    palette: list[str]
+    min: float
+    max: float
+    note: str | None = None
+
+
 class SummaryFilters(BaseModel):
     uf: str | None = None
     bioma: str | None = None
@@ -64,3 +76,10 @@ class ValidateResponse(BaseModel):
     timeseries_sum_n_focos: int
     choropleth_sum_n_focos: int
     consistent: bool
+
+
+class BoundsResponse(BaseModel):
+    entity: Literal["uf", "mun", "bioma", "uc", "ti"]
+    key: str
+    bbox: list[float]
+    center: list[float]
