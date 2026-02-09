@@ -549,17 +549,38 @@ def _points_smoke_validate(
     from_date: date,
     to: date,
     filters: dict[str, Optional[str]],
-) -> tuple[bool, bool]:
-    test_day = to - timedelta(days=1)
-    if test_day < from_date:
-        test_day = from_date
+) -> tuple[bool, bool, Optional[date], int]:
+    where_sql, params = _build_fact_where(from_date, to, filters)
+    test_day: Optional[date] = None
+    sql_peak = f"""
+    select
+      day
+    from marts.mv_focos_day_dim
+    where {where_sql}
+    group by day
+    order by sum(n_focos) desc, day asc
+    limit 1;
+    """
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql_peak, params)
+            peak_row = cur.fetchone()
+            if peak_row and peak_row[0]:
+                test_day = peak_row[0]
+
+    if test_day is None:
+        test_day = to - timedelta(days=1)
+        if test_day < from_date:
+            test_day = from_date
     # Small bbox to keep smoke test cheap.
     bbox = (-55.5, -16.5, -54.5, -15.5)
     try:
         result = _run_points_query(test_day, bbox, filters, max(1, POINTS_SMOKE_LIMIT))
-        return True, bool(int(result.get("returned", 0)) <= int(result.get("limit", 0)))
+        returned = int(result.get("returned", 0))
+        le_limit = bool(returned <= int(result.get("limit", 0)))
+        return True, le_limit, test_day, returned
     except Exception:
-        return False, False
+        return False, False, test_day, 0
 
 
 def _ascii_label(text: str) -> str:
@@ -1772,7 +1793,12 @@ def validate(
                 except HTTPException:
                     bounds_consistent = False
 
-        points_endpoint_ok, points_returned_le_limit = _points_smoke_validate(from_date, to, filters)
+        (
+            points_endpoint_ok,
+            points_returned_le_limit,
+            points_date_used,
+            points_returned,
+        ) = _points_smoke_validate(from_date, to, filters)
 
         return {
             "from": from_date,
@@ -1788,6 +1814,8 @@ def validate(
             "bounds_consistent": bounds_consistent,
             "points_endpoint_ok": points_endpoint_ok,
             "points_returned_le_limit": points_returned_le_limit,
+            "points_date_used": points_date_used,
+            "points_returned": points_returned,
         }
 
     out = _cached(

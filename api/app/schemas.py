@@ -84,6 +84,8 @@ class ValidateResponse(BaseModel):
     bounds_consistent: bool | None = None
     points_endpoint_ok: bool | None = None
     points_returned_le_limit: bool | None = None
+    points_date_used: date | None = None
+    points_returned: int | None = None
 
 
 class MunicipalityLookupResponse(BaseModel):
