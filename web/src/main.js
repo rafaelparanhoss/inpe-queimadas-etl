@@ -33,6 +33,43 @@ function addDaysIso(iso, delta) {
   return `${yyyy}-${mm}-${dd}`
 }
 
+function parseIsoDate(iso) {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null
+  const d = new Date(`${iso}T00:00:00`)
+  if (Number.isNaN(d.getTime())) return null
+  const yyyy = d.getFullYear()
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  const normalized = `${yyyy}-${mm}-${dd}`
+  if (normalized !== iso) return null
+  return d
+}
+
+function normalizeRangeInputs(fromStr, toStr) {
+  const from = String(fromStr || '').trim()
+  const to = String(toStr || '').trim()
+
+  if (!from && !to) {
+    return { from: null, to: null, adjusted: false }
+  }
+
+  const fromDate = parseIsoDate(from)
+  const toDate = parseIsoDate(to)
+  if (!fromDate || !toDate) {
+    return { from: from || null, to: to || null, adjusted: false }
+  }
+
+  if (toDate <= fromDate) {
+    return {
+      from,
+      to: addDaysIso(from, 1),
+      adjusted: true,
+    }
+  }
+
+  return { from, to, adjusted: false }
+}
+
 function defaultRangeLast30() {
   const today = todayIso()
   const to = addDaysIso(today, 1)
@@ -64,6 +101,7 @@ function startRequestCycle() {
 
 let pointsAbort = null
 let latestSummary = null
+let rangeAdjustNotice = null
 
 function startPointsRequestCycle() {
   if (pointsAbort) pointsAbort.abort()
@@ -327,6 +365,8 @@ async function refreshAll() {
 
   const filters = pickFilters()
   const showMunLayer = Boolean(state.ui?.showMunLayer && filters.uf)
+  const pendingRangeNotice = rangeAdjustNotice
+  rangeAdjustNotice = null
   ui.setStatus('Carregando...')
   setFilterUi()
 
@@ -469,10 +509,10 @@ async function refreshAll() {
       if (!filters.uf) {
         ui.setStatus('Selecione uma UF para manter a camada municipal.')
       } else {
-        ui.setStatus('')
+        ui.setStatus(pendingRangeNotice || '')
       }
     } else {
-      ui.setStatus('')
+      ui.setStatus(pendingRangeNotice || '')
     }
   } catch (err) {
     if (err?.name === 'AbortError') return
@@ -481,8 +521,19 @@ async function refreshAll() {
 }
 
 function applyInputs() {
-  const { from, to } = ui.getInputs()
-  setState({ from: from || null, to: to || null })
+  const raw = ui.getInputs()
+  const normalized = normalizeRangeInputs(raw.from, raw.to)
+  const from = normalized.from || null
+  const to = normalized.to || null
+  if (from && to) {
+    ui.setInputs({ from, to })
+  }
+  if (normalized.adjusted && from && to) {
+    rangeAdjustNotice = `Periodo ajustado automaticamente: TO = ${to} (exclusivo).`
+  } else {
+    rangeAdjustNotice = null
+  }
+  setState({ from, to })
   void refreshAll()
 }
 
@@ -500,6 +551,7 @@ function clearFilters() {
   }
   pendingOverlayFocus = null
   latestSummary = null
+  rangeAdjustNotice = null
   setState({ from, to })
   ui.setInputs({ from, to })
   mapCtl.clearSelectionOverlay()
