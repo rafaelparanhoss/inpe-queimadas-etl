@@ -17,6 +17,7 @@ from .geo import to_feature
 from .schemas import (
     BoundsResponse,
     ChoroplethWithLegendResponse,
+    MunicipalityLookupResponse,
     SummaryResponse,
     TimeseriesResponse,
     TopResponse,
@@ -188,6 +189,24 @@ def _quantile(sorted_values: list[int], q: float) -> float:
     return float(sorted_values[idx])
 
 
+def _is_strictly_increasing(values: list[float]) -> bool:
+    if len(values) < 2:
+        return False
+    for i in range(1, len(values)):
+        if not (values[i] > values[i - 1]):
+            return False
+    return True
+
+
+def _make_equal_breaks(min_v: float, max_v: float, classes: int) -> list[float]:
+    if classes < 1:
+        classes = 1
+    if max_v <= min_v:
+        return [min_v, min_v + 1.0]
+    step = (max_v - min_v) / float(classes)
+    return [min_v + (step * i) for i in range(classes + 1)]
+
+
 def _palette_for_breaks(k: int, zero_class: bool) -> list[str]:
     classes = max(1, int(k))
     quantile_colors = CHORO_QUANTILE_COLORS[:classes]
@@ -209,19 +228,21 @@ def compute_breaks(
 
     classes = max(1, int(k))
     if not values:
+        breaks = [0.0, 1.0]
         return {
-            "breaks": [0.0 for _ in range(classes + 1)],
+            "breaks": breaks,
             "domain": [0.0, 0.0],
-            "method": "quantile",
+            "method": "equal",
             "unit": "focos",
             "zero_class": bool(zero_class),
-            "palette": _palette_for_breaks(classes, bool(zero_class)),
+            "palette": _palette_for_breaks(len(breaks) - 1, bool(zero_class)),
         }
 
     safe_values = [int(v) for v in values]
     has_zero_or_less = any(v <= 0 for v in safe_values)
     positive_values = sorted(v for v in safe_values if v > 0)
-    use_zero_class = bool(zero_class and has_zero_or_less)
+    use_zero_class = bool(zero_class and has_zero_or_less and bool(positive_values))
+    method_out: Literal["quantile", "equal"] = "quantile"
 
     # Zero class is represented separately in legend; quantiles are computed on positive values.
     if use_zero_class and positive_values:
@@ -229,19 +250,39 @@ def compute_breaks(
     else:
         sample = sorted(safe_values)
 
-    breaks = [_quantile(sample, i / classes) for i in range(classes + 1)]
-    for i in range(1, len(breaks)):
-        if breaks[i] < breaks[i - 1]:
-            breaks[i] = breaks[i - 1]
+    unique_sample = sorted(set(sample))
+    if len(unique_sample) <= 1:
+        only = float(unique_sample[0]) if unique_sample else 0.0
+        breaks = [only, only + 1.0]
+        method_out = "equal"
+    else:
+        quantile_breaks = [_quantile(sample, i / classes) for i in range(classes + 1)]
+        if _is_strictly_increasing(quantile_breaks):
+            breaks = quantile_breaks
+        else:
+            eq_classes = min(classes, max(2, len(unique_sample) - 1))
+            breaks = _make_equal_breaks(float(unique_sample[0]), float(unique_sample[-1]), eq_classes)
+            method_out = "equal"
 
+    if not _is_strictly_increasing(breaks):
+        breaks = _make_equal_breaks(float(min(sample)), float(max(sample)), 1)
+        method_out = "equal"
+
+    classes_out = max(1, len(breaks) - 1)
     return {
         "breaks": breaks,
         "domain": [float(min(safe_values)), float(max(safe_values))],
-        "method": "quantile",
+        "method": method_out,
         "unit": "focos",
         "zero_class": use_zero_class,
-        "palette": _palette_for_breaks(classes, use_zero_class),
+        "palette": _palette_for_breaks(classes_out, use_zero_class),
     }
+
+
+def _legend_breaks_monotonic(values: list[int]) -> bool:
+    legend = compute_breaks(values, method="quantile", k=5, zero_class=True)
+    breaks = [float(x) for x in legend.get("breaks", [])]
+    return _is_strictly_increasing(breaks)
 
 
 _IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -508,6 +549,84 @@ def choropleth_mun(
         key,
         run,
         {"from": from_date, "to": to, "filters": _filters_payload(filters), "ms": now_ms() - t0},
+    )
+    return out
+
+
+@app.get("/api/lookup/mun", response_model=MunicipalityLookupResponse)
+def lookup_mun(
+    request: Request,
+    key: str = Query(...),
+):
+    t0 = now_ms()
+    key_norm = _norm_text(key)
+    if not key_norm:
+        raise HTTPException(status_code=400, detail="key is required")
+
+    source = _geo_source("mun")
+    if source is None or "uf_col" not in source:
+        raise HTTPException(status_code=404, detail="geometry source not configured")
+
+    cache_key = _cache_key(request)
+
+    def run():
+        table = source["table"]
+        key_col = source["key_col"]
+        uf_col = source["uf_col"]
+        sql = f"""
+        with gm as (
+          select
+            {key_col}::text as mun,
+            {uf_col}::text as uf
+          from {table}
+          where {key_col}::text = %(mun)s::text
+          limit 1
+        ),
+        d as (
+          select
+            cd_mun::text as mun,
+            max(mun_nm_mun)::text as mun_nome
+          from marts.mv_focos_day_dim
+          where cd_mun::text = %(mun)s::text
+          group by cd_mun
+        )
+        select
+          gm.mun,
+          coalesce(d.mun_nome, gm.mun) as mun_nome,
+          upper(gm.uf)::text as uf,
+          upper(gm.uf)::text as uf_nome
+        from gm
+        left join d on d.mun = gm.mun;
+        """
+        with pool.connection() as conn:
+            with conn.cursor() as cur:
+                try:
+                    cur.execute(sql, {"mun": key_norm})
+                    row = cur.fetchone()
+                except Exception as exc:  # pragma: no cover - depends on runtime DB schema
+                    if _is_geo_source_error(exc):
+                        raise HTTPException(status_code=404, detail="geometry source not configured") from exc
+                    raise
+
+        if not row:
+            raise HTTPException(status_code=404, detail="municipality not found")
+
+        mun, mun_nome, uf, uf_nome = row
+        if not uf:
+            raise HTTPException(status_code=404, detail="municipality uf not found")
+
+        return {
+            "mun": str(mun),
+            "mun_nome": str(mun_nome or mun),
+            "uf": str(uf),
+            "uf_nome": str(uf_nome or uf),
+        }
+
+    out = _cached(
+        "lookup_mun",
+        cache_key,
+        run,
+        {"key": key_norm, "ms": now_ms() - t0},
     )
     return out
 
@@ -887,9 +1006,41 @@ def validate(
                 cur.execute(sql, params)
                 row = cur.fetchone()
 
+                cur.execute(
+                    f"""
+                    select
+                      sum(n_focos)::bigint as n_focos
+                    from marts.mv_focos_day_dim
+                    where {where_sql}
+                    group by uf;
+                    """,
+                    params,
+                )
+                uf_values = [int(r[0] or 0) for r in cur.fetchall()]
+
+                mun_values: list[int] = []
+                if filters.get("uf"):
+                    cur.execute(
+                        f"""
+                        select
+                          sum(n_focos)::bigint as n_focos
+                        from marts.mv_focos_day_dim
+                        where {where_sql}
+                        group by cd_mun;
+                        """,
+                        params,
+                    )
+                    mun_values = [int(r[0] or 0) for r in cur.fetchall()]
+
         totals_n_focos = int(row[0] if row else 0)
         timeseries_sum_n_focos = int(row[1] if row else 0)
         choropleth_sum_n_focos = int(row[2] if row else 0)
+        invalid_filter_state = bool(filters.get("mun") and not filters.get("uf"))
+
+        break_monotonicity_ok = _legend_breaks_monotonic(uf_values) if uf_values else True
+        if mun_values:
+            break_monotonicity_ok = break_monotonicity_ok and _legend_breaks_monotonic(mun_values)
+
         return {
             "from": from_date,
             "to": to,
@@ -898,6 +1049,8 @@ def validate(
             "timeseries_sum_n_focos": timeseries_sum_n_focos,
             "choropleth_sum_n_focos": choropleth_sum_n_focos,
             "consistent": totals_n_focos == timeseries_sum_n_focos == choropleth_sum_n_focos,
+            "invalid_filter_state": invalid_filter_state,
+            "break_monotonicity_ok": break_monotonicity_ok,
         }
 
     out = _cached(

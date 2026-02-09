@@ -43,7 +43,7 @@ class ChoroplethWithLegendResponse(BaseModel):
     geojson: dict[str, Any]
     breaks: list[float]
     domain: list[float]
-    method: Literal["quantile"]
+    method: Literal["quantile", "equal"]
     unit: Literal["focos"]
     zero_class: bool
     palette: list[str]
@@ -77,6 +77,15 @@ class ValidateResponse(BaseModel):
     timeseries_sum_n_focos: int
     choropleth_sum_n_focos: int
     consistent: bool
+    invalid_filter_state: bool
+    break_monotonicity_ok: bool
+
+
+class MunicipalityLookupResponse(BaseModel):
+    mun: str
+    mun_nome: str
+    uf: str
+    uf_nome: str
 
 
 class BoundsResponse(BaseModel):
