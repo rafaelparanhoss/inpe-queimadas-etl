@@ -471,17 +471,22 @@ Guardrails:
 - `limit` default `20000` com hard cap `50000`.
 - Se o backend encontrar mais de `limit`, retorna apenas `limit` e `truncated=true`.
 - Cache curto por URL+bucket de zoom (`POINTS_CACHE_TTL_SECONDS`, default `30s`).
+- Em `/api/validate`, o backend agora informa `points_date_used` e `points_returned` no smoke interno de pontos.
 
 Exemplos curl (Windows):
 
 ```powershell
 curl.exe -s "http://127.0.0.1:8000/api/points?date=2025-08-01&bbox=-61.0,-16.5,-55.0,-10.0&limit=5000"
 curl.exe -s "http://127.0.0.1:8000/api/points?date=2025-08-01&bbox=-74,-34,-34,6&limit=20000"
+curl.exe -s "http://127.0.0.1:8000/api/validate?from=2025-08-01&to=2025-09-01"
 ```
 
 Validacao:
 - `scripts/smoke.ps1` agora testa `/api/points` e falha se `returned > limit`.
+- `scripts/smoke.ps1` tambem usa `peak_day` de `/api/summary?uf=RS` para validar pontos no dia de pico.
 - No frontend, toggle **Pontos (MVP)**:
   - recarrega em `moveend/zoomend` com debounce,
   - usa clustering no cliente,
-  - mostra badge de truncamento quando `truncated=true`.
+  - mostra badge de truncamento quando `truncated=true`,
+  - permite escolher o dia dos pontos via seletor `peak_day | from | custom`.
+  - quando `to-from == 1 dia`, o modo fica travado em `from`.

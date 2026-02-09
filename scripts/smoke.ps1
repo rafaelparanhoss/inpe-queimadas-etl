@@ -46,6 +46,16 @@ if ([int]$points.returned -gt [int]$points.limit) {
 }
 Write-Host ("points returned={0} limit={1} truncated={2}" -f $points.returned, $points.limit, $points.truncated)
 
+$summaryRs = Get-Json "$BaseUrl/api/summary?from=$From&to=$To&uf=RS"
+if ($summaryRs.peak_day) {
+    $peakDay = [string]$summaryRs.peak_day
+    $pointsRsPeak = Get-Json "$BaseUrl/api/points?date=$peakDay&bbox=-74,-34,-34,6&limit=5000&uf=RS"
+    if ([int]$summaryRs.total_n_focos -gt 0 -and [int]$pointsRsPeak.returned -le 0) {
+        throw "Expected points for RS on peak_day=$peakDay"
+    }
+    Write-Host ("points RS peak_day={0} returned={1}" -f $peakDay, $pointsRsPeak.returned)
+}
+
 $topUf = Get-Json "$BaseUrl/api/top?group=uf&from=$From&to=$To&limit=1"
 $ufKey = $null
 if ($topUf.items -and $topUf.items.Count -gt 0) {
