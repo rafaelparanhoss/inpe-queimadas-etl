@@ -53,6 +53,14 @@ if ($summaryRs.peak_day) {
     if ([int]$summaryRs.total_n_focos -gt 0 -and [int]$pointsRsPeak.returned -le 0) {
         throw "Expected points for RS on peak_day=$peakDay"
     }
+    if ($pointsRsPeak.points -and $pointsRsPeak.points.Count -gt 0) {
+        $firstPoint = $pointsRsPeak.points[0]
+        foreach ($field in @('uf', 'mun_key', 'mun_label', 'bioma_key', 'bioma_label')) {
+            if (-not $firstPoint.PSObject.Properties.Name.Contains($field)) {
+                throw "Expected field '$field' in /api/points payload"
+            }
+        }
+    }
     Write-Host ("points RS peak_day={0} returned={1}" -f $peakDay, $pointsRsPeak.returned)
 }
 
