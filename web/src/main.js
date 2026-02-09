@@ -309,7 +309,7 @@ async function refreshAll() {
     chartsCtl.setTopUf(topUf.items)
     chartsCtl.setTopBioma(topBioma.items)
     chartsCtl.setTopMun(topMun.items)
-    chartsCtl.setTimeseries(ts.items)
+    chartsCtl.setTimeseries(ts.items, ts.granularity || 'day')
     ui.setTopUc(topUc.items)
     ui.setTopTi(topTi.items)
     ui.setKpis(summary)

@@ -63,6 +63,41 @@ function setBarData(chart, items) {
   chart.update()
 }
 
+function computeTsTicks(nPoints) {
+  if (nPoints <= 14) {
+    return {
+      autoSkip: false,
+      maxTicksLimit: Math.max(2, nPoints),
+      maxRotation: 0,
+      minRotation: 0,
+    }
+  }
+  if (nPoints <= 45) {
+    return {
+      autoSkip: true,
+      maxTicksLimit: 9,
+      maxRotation: 45,
+      minRotation: 45,
+    }
+  }
+  return {
+    autoSkip: true,
+    maxTicksLimit: 10,
+    maxRotation: 45,
+    minRotation: 45,
+  }
+}
+
+function formatAxisDate(isoDate, granularity) {
+  const raw = String(isoDate || '')
+  const [yyyy = '', mm = '', dd = ''] = raw.split('-')
+  if (granularity === 'month') {
+    return yyyy && mm ? `${yyyy}-${mm}` : raw
+  }
+  if (mm && dd) return `${mm}-${dd}`
+  return raw
+}
+
 export function initCharts(onFilterClick) {
   const topUfCtx = document.getElementById('topUfChart')
   const topBiomaCtx = document.getElementById('topBiomaChart')
@@ -91,19 +126,38 @@ export function initCharts(onFilterClick) {
       animation: false,
       plugins: {
         legend: { display: false, labels: { color: CHART_TEXT } },
+        tooltip: {
+          callbacks: {
+            title: (ctx) => {
+              if (!ctx?.length) return ''
+              const idx = ctx[0].dataIndex
+              return tsChart.$fullLabels?.[idx] || String(ctx[0].label || '')
+            },
+          },
+        },
       },
       scales: baseScales(),
     },
   })
+  tsChart.$fullLabels = []
+  tsChart.$granularity = 'day'
 
   return {
     setTopUf: (items) => setBarData(topUfChart, items),
     setTopBioma: (items) => setBarData(topBiomaChart, items),
     setTopMun: (items) => setBarData(topMunChart, items),
-    setTimeseries: (items) => {
+    setTimeseries: (items, granularity = 'day') => {
       const safeItems = items || []
-      tsChart.data.labels = safeItems.map((x) => x.day)
+      const fullLabels = safeItems.map((x) => String(x.day))
+      tsChart.$fullLabels = fullLabels
+      tsChart.$granularity = granularity
+      tsChart.data.labels = fullLabels.map((x) => formatAxisDate(x, granularity))
       tsChart.data.datasets[0].data = safeItems.map((x) => x.n_focos || 0)
+      const tickConfig = computeTsTicks(safeItems.length)
+      tsChart.options.scales.x.ticks = {
+        ...tsChart.options.scales.x.ticks,
+        ...tickConfig,
+      }
       tsChart.update()
     },
   }
