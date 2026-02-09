@@ -298,3 +298,35 @@ set VITE_API_BASE=http://127.0.0.1:8001
 - Se bounds do item falhar, o zoom cai para UF selecionada e depois para Brasil.
 - Toggle municipal so habilita com UF selecionada.
 - Sem configuracao GEO_MUN_*, a UI continua com camada UF (fallback sem travar).
+
+### Fase 1.7 (Simbologia Fire + Dropdown UF + Zoom UC/TI)
+
+Nesta fase:
+- o choropleth UF/municipal usa paleta "fire" (amarelo -> laranja -> vermelho -> roxo escuro);
+- os breaks continuam dinamicos no backend (quantile com fallback equal), e a legenda Leaflet usa o metadata do layer ativo;
+- foi adicionado dropdown de UF no painel;
+- qualquer selecao de UF (dropdown, mapa, ranking) liga automaticamente a camada municipal;
+- ao limpar UF (opcao "Todas"), a camada municipal e desligada e o mapa volta ao Brasil;
+- cliques em ranking de UC/TI usam `/api/bounds?entity=uc|ti&key=...` para fit bounds do poligono.
+
+#### Curls adicionais
+
+```powershell
+curl.exe -s "http://127.0.0.1:8001/api/bounds?entity=uc&key=0000.00.0001"
+curl.exe -s "http://127.0.0.1:8001/api/bounds?entity=ti&key=10001"
+```
+
+Conferir metadata da paleta/breaks:
+
+```powershell
+$uf = curl.exe -s "http://127.0.0.1:8001/api/choropleth/uf?from=2025-08-01&to=2025-09-01" | ConvertFrom-Json
+$uf | Select-Object method, unit, domain, zero_class, breaks, palette
+
+$mun = curl.exe -s "http://127.0.0.1:8001/api/choropleth/mun?from=2025-08-01&to=2025-09-01&uf=MT" | ConvertFrom-Json
+$mun | Select-Object method, unit, domain, zero_class, breaks, palette
+```
+
+Checklist visual:
+- selecione UF pelo dropdown e confirme que a camada municipal liga automaticamente;
+- clique em item de TI/UC e confirme zoom no poligono (fallback para UF/Brasil se bounds indisponivel);
+- alterne entre layer UF e municipal e confirme que a legenda muda sem faixas repetidas.
