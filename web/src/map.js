@@ -399,7 +399,6 @@ export function initMap(onFeaturePick) {
       }
 
       const onEachFeature = (feat, lyr) => {
-        if (pointsEnabled) return
         const p = feat.properties || {}
         const key = p.key || p.uf
         const uf = String(p.uf || '')
@@ -410,24 +409,35 @@ export function initMap(onFeaturePick) {
         const mean = Number(p.mean_per_day) || 0
         const title = layerType === 'mun' ? `Municipio: ${label}` : `UF: ${label}`
 
-        lyr.bindTooltip(
-          `${title}<br/>Focos: ${numberLabel(n)}<br/>Media/Dia: ${mean.toFixed(1)}`,
-          { sticky: true },
-        )
+        if (!pointsEnabled) {
+          lyr.bindTooltip(
+            `${title}<br/>Focos: ${numberLabel(n)}<br/>Media/Dia: ${mean.toFixed(1)}`,
+            { sticky: true },
+          )
 
-        lyr.on('mouseover', () => {
-          lyr.setStyle({
-            weight: 3.4,
-            fillOpacity: 0.84,
+          lyr.on('mouseover', () => {
+            lyr.setStyle({
+              weight: 3.4,
+              fillOpacity: 0.84,
+            })
           })
-        })
 
-        lyr.on('mouseout', () => {
-          layer.resetStyle(lyr)
-        })
+          lyr.on('mouseout', () => {
+            layer.resetStyle(lyr)
+          })
+        }
 
         if (layerType === 'mun') {
-          lyr.on('click', () => onFeaturePick('mun', String(key), String(label)))
+          lyr.on('click', (ev) => {
+            const bounds = ev?.target?.getBounds?.() || lyr.getBounds?.()
+            if (bounds && bounds.isValid()) {
+              map.fitBounds(bounds, {
+                padding: [20, 20],
+                maxZoom: 11,
+              })
+            }
+            onFeaturePick('mun', String(key), String(label))
+          })
         } else {
           lyr.on('click', () => onFeaturePick('uf', uf, uf))
         }
@@ -437,7 +447,7 @@ export function initMap(onFeaturePick) {
         pane: CHOROPLETH_PANE,
         style,
         onEachFeature,
-        interactive: !pointsEnabled,
+        interactive: true,
       }).addTo(map)
     },
     setPointsData: (payload) => {
