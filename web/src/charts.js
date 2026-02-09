@@ -14,11 +14,17 @@ const LINE_COLOR = '#38bdf8'
 function baseScales() {
   return {
     x: {
-      ticks: { color: CHART_TEXT, autoSkip: false, maxRotation: 50, minRotation: 0 },
+      ticks: {
+        color: CHART_TEXT,
+        autoSkip: false,
+        maxRotation: 50,
+        minRotation: 0,
+        font: { size: 12, weight: '500' },
+      },
       grid: { color: CHART_GRID },
     },
     y: {
-      ticks: { color: CHART_TEXT },
+      ticks: { color: CHART_TEXT, font: { size: 12, weight: '500' } },
       grid: { color: CHART_GRID },
     },
   }
@@ -38,7 +44,9 @@ function createBarChart(ctx, onPick) {
     },
     options: {
       responsive: true,
+      maintainAspectRatio: false,
       animation: false,
+      layout: { padding: { top: 6, right: 6, bottom: 2, left: 2 } },
       onClick: (_, elements) => {
         if (!elements?.length) return
         const idx = elements[0].index
@@ -46,7 +54,14 @@ function createBarChart(ctx, onPick) {
         if (item) onPick(item)
       },
       plugins: {
-        legend: { display: false, labels: { color: CHART_TEXT } },
+        legend: { display: false, labels: { color: CHART_TEXT, font: { size: 12 } } },
+        tooltip: {
+          titleColor: '#f8fafc',
+          bodyColor: '#dbeafe',
+          backgroundColor: 'rgba(12, 21, 38, 0.96)',
+          borderColor: 'rgba(119, 148, 194, 0.42)',
+          borderWidth: 1,
+        },
       },
       scales: baseScales(),
     },
@@ -123,10 +138,17 @@ export function initCharts(onFilterClick) {
     },
     options: {
       responsive: true,
+      maintainAspectRatio: false,
       animation: false,
+      layout: { padding: { top: 6, right: 6, bottom: 2, left: 2 } },
       plugins: {
-        legend: { display: false, labels: { color: CHART_TEXT } },
+        legend: { display: false, labels: { color: CHART_TEXT, font: { size: 12 } } },
         tooltip: {
+          titleColor: '#f8fafc',
+          bodyColor: '#dbeafe',
+          backgroundColor: 'rgba(12, 21, 38, 0.96)',
+          borderColor: 'rgba(119, 148, 194, 0.42)',
+          borderWidth: 1,
           callbacks: {
             title: (ctx) => {
               if (!ctx?.length) return ''

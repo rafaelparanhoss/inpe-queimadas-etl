@@ -175,6 +175,22 @@ h3 {
   letter-spacing: 0.03em;
 }
 
+.chartBox {
+  position: relative;
+  width: 100%;
+  height: 250px;
+}
+
+.chartBox.chartTall {
+  height: 285px;
+}
+
+.chartBox > canvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+}
+
 .kpiGrid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -252,50 +268,52 @@ h3 {
 }
 
 .map-legend {
-  background: rgba(9, 14, 27, 0.9);
+  background: rgba(9, 14, 27, 0.84);
   border: 1px solid #2a3d61;
-  border-radius: 10px;
-  padding: 9px 10px;
+  border-radius: 12px;
+  padding: 12px 14px;
   color: #dce8ff;
-  font-size: 12px;
-  line-height: 1.38;
-  min-width: 170px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  min-width: 220px;
+  backdrop-filter: blur(6px);
 }
 
 .map-legend .title {
   font-weight: 700;
+  font-size: 14px;
   letter-spacing: 0.02em;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .map-legend .sub {
-  font-size: 11px;
+  font-size: 12.5px;
   color: var(--muted);
-  margin-bottom: 3px;
+  margin-bottom: 5px;
 }
 
 .map-legend .item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 3px;
+  gap: 10px;
+  margin-bottom: 5px;
 }
 
 .map-legend .swatch {
-  width: 14px;
-  height: 14px;
-  border-radius: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
   border: 1px solid rgba(255, 255, 255, 0.2);
-  flex: 0 0 14px;
+  flex: 0 0 16px;
 }
 
 .leaflet-tooltip {
   background: #0b1324;
   color: #e5efff;
   border: 1px solid #2c4269;
-  border-radius: 6px;
-  padding: 6px 8px;
-  font-size: 12px;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
   box-shadow: none;
 }
 
@@ -317,6 +335,14 @@ h3 {
     max-height: 56%;
     border-right: none;
     border-bottom: 1px solid var(--card-border);
+  }
+
+  .chartBox {
+    height: 220px;
+  }
+
+  .chartBox.chartTall {
+    height: 250px;
   }
 
   .mapWrap {
