@@ -80,6 +80,8 @@ class ValidateResponse(BaseModel):
     consistent: bool
     invalid_filter_state: bool
     break_monotonicity_ok: bool
+    bounds_vs_geo_bbox_ratio: float | None = None
+    bounds_consistent: bool | None = None
 
 
 class MunicipalityLookupResponse(BaseModel):

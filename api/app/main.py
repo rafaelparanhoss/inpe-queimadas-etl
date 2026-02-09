@@ -486,6 +486,91 @@ def _load_geo_shape_metrics(source: dict[str, str], key_norm: str) -> dict[str, 
     }
 
 
+def _bbox_area(bbox: list[float]) -> float:
+    minx, miny, maxx, maxy = bbox
+    w = max(0.0, float(maxx) - float(minx))
+    h = max(0.0, float(maxy) - float(miny))
+    return w * h
+
+
+def _bbox_center(bbox: list[float]) -> list[float]:
+    minx, miny, maxx, maxy = bbox
+    return [((float(miny) + float(maxy)) / 2.0), ((float(minx) + float(maxx)) / 2.0)]
+
+
+def _load_bounds_bbox(
+    entity: BoundsEntity,
+    key_norm: str,
+    source: dict[str, str],
+    uf: Optional[str] = None,
+) -> list[float]:
+    # Keep UC/TI bounds aligned with /api/geo geometry pipeline and cache key.
+    if entity in ("uc", "ti"):
+        geometry_key = f"/api/geo/shape?entity={entity}&key={key_norm}"
+        metrics = _cached(
+            "geo_overlay_shape",
+            geometry_key,
+            lambda: _load_geo_shape_metrics(source, key_norm),
+            {"entity": entity, "key": key_norm},
+        )
+        return [float(x) for x in metrics["bbox"]]
+
+    params: dict[str, object] = {"key": key_norm}
+    table = source["table"]
+    key_col = source["key_col"]
+    geom_col = source["geom_col"]
+    uf_clause = ""
+    if entity == "mun" and uf is not None:
+        uf_col = source.get("uf_col")
+        if not uf_col:
+            raise HTTPException(status_code=400, detail="geometry source not configured")
+        uf_norm = _norm_text(uf, upper=True)
+        if uf_norm:
+            params["uf"] = uf_norm
+            uf_clause = f" and {uf_col}::text = %(uf)s::text"
+
+    sql = f"""
+    with filtered as (
+      select
+        case
+          when {geom_col} is null then null
+          when st_srid({geom_col}) in (4326, 4674) then st_transform({geom_col}, 4326)
+          when st_srid({geom_col}) = 0 then st_setsrid({geom_col}, 4326)
+          else st_transform({geom_col}, 4326)
+        end as geom_wgs84
+      from {table}
+      where {key_col}::text = %(key)s::text
+      {uf_clause}
+    ),
+    agg as (
+      select
+        st_extent(geom_wgs84) as ext
+      from filtered
+      where geom_wgs84 is not null
+    )
+    select
+      st_xmin(ext)::float8 as minx,
+      st_ymin(ext)::float8 as miny,
+      st_xmax(ext)::float8 as maxx,
+      st_ymax(ext)::float8 as maxy
+    from agg;
+    """
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            try:
+                cur.execute(sql, params)
+                row = cur.fetchone()
+            except Exception as exc:  # pragma: no cover - depends on runtime DB schema
+                if _is_geo_source_error(exc):
+                    raise HTTPException(status_code=404, detail="geometry source not configured") from exc
+                raise
+
+    if not row or row[0] is None or row[1] is None or row[2] is None or row[3] is None:
+        raise HTTPException(status_code=404, detail="geometry not found for key")
+
+    return [float(row[0]), float(row[1]), float(row[2]), float(row[3])]
+
+
 @app.get("/health")
 def health() -> dict:
     return {"ok": True}
@@ -791,58 +876,12 @@ def bounds(
     key_cache = _cache_key(request)
 
     def run():
-        params: dict[str, object] = {"key": key_norm}
-        table = source["table"]
-        key_col = source["key_col"]
-        geom_col = source["geom_col"]
-        uf_clause = ""
-        if entity == "mun" and uf is not None:
-            uf_col = source.get("uf_col")
-            if not uf_col:
-                raise HTTPException(status_code=400, detail="geometry source not configured")
-            uf_norm = _norm_text(uf, upper=True)
-            if uf_norm:
-                params["uf"] = uf_norm
-                uf_clause = f" and {uf_col}::text = %(uf)s::text"
-
-        sql = f"""
-        select
-          st_xmin(ext)::float8 as minx,
-          st_ymin(ext)::float8 as miny,
-          st_xmax(ext)::float8 as maxx,
-          st_ymax(ext)::float8 as maxy,
-          st_y(st_centroid(g))::float8 as cy,
-          st_x(st_centroid(g))::float8 as cx
-        from (
-          select
-            st_extent({geom_col}) as ext,
-            st_collect({geom_col}) as g
-          from {table}
-          where {key_col}::text = %(key)s::text
-          {uf_clause}
-        ) s;
-        """
-        with pool.connection() as conn:
-            with conn.cursor() as cur:
-                try:
-                    cur.execute(sql, params)
-                    row = cur.fetchone()
-                except Exception as exc:  # pragma: no cover - depends on runtime DB schema
-                    if _is_geo_source_error(exc):
-                        raise HTTPException(status_code=404, detail="geometry source not configured") from exc
-                    raise
-
-        if not row or row[0] is None or row[1] is None or row[2] is None or row[3] is None:
-            raise HTTPException(status_code=404, detail="geometry not found for key")
-
-        minx, miny, maxx, maxy, cy, cx = row
-        if cy is None or cx is None:
-            cy = (float(miny) + float(maxy)) / 2.0
-            cx = (float(minx) + float(maxx)) / 2.0
+        bbox = _load_bounds_bbox(entity, key_norm, source, uf)
+        cy, cx = _bbox_center(bbox)
         return {
             "entity": entity,
             "key": str(key_norm),
-            "bbox": [float(minx), float(miny), float(maxx), float(maxy)],
+            "bbox": bbox,
             "center": [float(cy), float(cx)],
         }
 
@@ -1321,6 +1360,37 @@ def validate(
         if mun_values:
             break_monotonicity_ok = break_monotonicity_ok and _legend_breaks_monotonic(mun_values)
 
+        bounds_vs_geo_bbox_ratio: float | None = None
+        bounds_consistent: bool | None = None
+        qa_entity: GeoEntity | None = None
+        qa_key: str | None = None
+        if filters.get("ti"):
+            qa_entity = "ti"
+            qa_key = str(filters["ti"])
+        elif filters.get("uc"):
+            qa_entity = "uc"
+            qa_key = str(filters["uc"])
+
+        if qa_entity and qa_key:
+            source = _geo_source(qa_entity)
+            if source is not None:
+                try:
+                    geometry_key = f"/api/geo/shape?entity={qa_entity}&key={qa_key}"
+                    metrics = _cached(
+                        "geo_overlay_shape",
+                        geometry_key,
+                        lambda: _load_geo_shape_metrics(source, qa_key),
+                        {"entity": qa_entity, "key": qa_key},
+                    )
+                    geo_bbox = [float(x) for x in metrics["bbox"]]
+                    bounds_bbox = _load_bounds_bbox(qa_entity, qa_key, source)
+                    geo_area = max(_bbox_area(geo_bbox), 1e-12)
+                    bounds_area = max(_bbox_area(bounds_bbox), 1e-12)
+                    bounds_vs_geo_bbox_ratio = float(max(bounds_area, geo_area) / min(bounds_area, geo_area))
+                    bounds_consistent = bounds_vs_geo_bbox_ratio <= 50.0
+                except HTTPException:
+                    bounds_consistent = False
+
         return {
             "from": from_date,
             "to": to,
@@ -1331,6 +1401,8 @@ def validate(
             "consistent": totals_n_focos == timeseries_sum_n_focos == choropleth_sum_n_focos,
             "invalid_filter_state": invalid_filter_state,
             "break_monotonicity_ok": break_monotonicity_ok,
+            "bounds_vs_geo_bbox_ratio": bounds_vs_geo_bbox_ratio,
+            "bounds_consistent": bounds_consistent,
         }
 
     out = _cached(
