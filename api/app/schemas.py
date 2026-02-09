@@ -82,6 +82,8 @@ class ValidateResponse(BaseModel):
     break_monotonicity_ok: bool
     bounds_vs_geo_bbox_ratio: float | None = None
     bounds_consistent: bool | None = None
+    points_endpoint_ok: bool | None = None
+    points_returned_le_limit: bool | None = None
 
 
 class MunicipalityLookupResponse(BaseModel):
@@ -122,3 +124,18 @@ class GeoOverlayQaResponse(BaseModel):
     warning_bbox_ratio: bool
     coords_hash: str
     bbox: list[float]
+
+
+class PointItem(BaseModel):
+    lon: float
+    lat: float
+    n: int
+
+
+class PointsResponse(BaseModel):
+    date: date
+    bbox: list[float]
+    returned: int
+    limit: int
+    truncated: bool
+    points: list[PointItem]

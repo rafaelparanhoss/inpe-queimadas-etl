@@ -9,6 +9,7 @@ import unicodedata
 from datetime import date, timedelta
 from typing import Callable, Literal, Optional
 
+from cachetools import TTLCache
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,6 +24,7 @@ from .schemas import (
     GeoOverlayResponse,
     GeoOverlayQaResponse,
     MunicipalityLookupResponse,
+    PointsResponse,
     SummaryResponse,
     TimeseriesResponse,
     TopResponse,
@@ -50,6 +52,7 @@ if cors_origins:
 
 pool = make_pool(load_db_config())
 cache = make_ttl_cache()
+points_cache = TTLCache(maxsize=1024, ttl=int(os.getenv("POINTS_CACHE_TTL_SECONDS", "30")))
 
 TopGroup = Literal["uf", "bioma", "mun", "uc", "ti"]
 BoundsEntity = Literal["uf", "mun", "bioma", "uc", "ti"]
@@ -77,6 +80,10 @@ TS_MONTH_THRESHOLD_DAYS = int(os.getenv("TS_MONTH_THRESHOLD_DAYS", "273"))
 CHORO_MAX_DAYS_MUN = int(os.getenv("CHORO_MAX_DAYS_MUN", "180"))
 CHORO_SIMPLIFY_TOL = float(os.getenv("CHORO_SIMPLIFY_TOL", "0.01"))
 GEO_SIMPLIFY_DEFAULT_TOL_M = float(os.getenv("GEO_SIMPLIFY_DEFAULT_TOL_M", "10.0"))
+POINTS_LIMIT_HARD_CAP = int(os.getenv("POINTS_LIMIT_HARD_CAP", "50000"))
+POINTS_LIMIT_DEFAULT = min(int(os.getenv("POINTS_LIMIT_DEFAULT", "20000")), POINTS_LIMIT_HARD_CAP)
+POINTS_SOURCE_TABLE = os.getenv("POINTS_SOURCE_TABLE", "marts.v_chart_focos_scatter").strip()
+POINTS_SMOKE_LIMIT = int(os.getenv("POINTS_SMOKE_LIMIT", "200"))
 
 
 def _validate_range(from_date: date, to: date) -> None:
@@ -388,6 +395,171 @@ def _timeseries_granularity(days: int) -> Literal["day", "week", "month"]:
     if days > TS_WEEK_THRESHOLD_DAYS:
         return "week"
     return "day"
+
+
+def _parse_bbox(bbox: str) -> tuple[float, float, float, float]:
+    raw = (bbox or "").strip()
+    parts = [p.strip() for p in raw.split(",") if p.strip()]
+    if len(parts) != 4:
+        raise HTTPException(status_code=400, detail="bbox must be minLon,minLat,maxLon,maxLat")
+    try:
+        min_lon, min_lat, max_lon, max_lat = (float(parts[0]), float(parts[1]), float(parts[2]), float(parts[3]))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="bbox values must be numeric") from exc
+
+    if min_lon >= max_lon or min_lat >= max_lat:
+        raise HTTPException(status_code=400, detail="invalid bbox: require min < max")
+    if min_lon < -180 or max_lon > 180 or min_lat < -90 or max_lat > 90:
+        raise HTTPException(status_code=400, detail="invalid bbox range")
+    return min_lon, min_lat, max_lon, max_lat
+
+
+def _points_zoom_bucket(bbox: tuple[float, float, float, float]) -> str:
+    min_lon, min_lat, max_lon, max_lat = bbox
+    extent = max(abs(max_lon - min_lon), abs(max_lat - min_lat))
+    if extent >= 45:
+        return "world"
+    if extent >= 20:
+        return "country"
+    if extent >= 8:
+        return "macro"
+    if extent >= 3:
+        return "state"
+    return "local"
+
+
+def _build_points_where(
+    day_value: date,
+    bbox: tuple[float, float, float, float],
+    filters: dict[str, Optional[str]],
+) -> tuple[str, dict[str, object]]:
+    min_lon, min_lat, max_lon, max_lat = bbox
+    clauses = [
+        "day = %(day)s::date",
+        "lon is not null",
+        "lat is not null",
+        "lon >= %(min_lon)s::float8",
+        "lon <= %(max_lon)s::float8",
+        "lat >= %(min_lat)s::float8",
+        "lat <= %(max_lat)s::float8",
+    ]
+    params: dict[str, object] = {
+        "day": day_value,
+        "min_lon": min_lon,
+        "min_lat": min_lat,
+        "max_lon": max_lon,
+        "max_lat": max_lat,
+    }
+
+    uf = filters.get("uf")
+    if uf is not None:
+        clauses.append("upper(coalesce(mun_uf, '')) = %(uf)s::text")
+        params["uf"] = uf
+
+    bioma = filters.get("bioma")
+    if bioma is not None:
+        clauses.append(
+            "(cd_bioma::text = %(bioma)s::text or upper(coalesce(bioma, '')) = %(bioma)s::text)"
+        )
+        params["bioma"] = bioma
+
+    mun = filters.get("mun")
+    if mun is not None:
+        clauses.append(
+            "(mun_cd_mun::text = %(mun)s::text or upper(coalesce(mun_nm_mun, '')) = %(mun)s::text)"
+        )
+        params["mun"] = mun
+
+    uc = filters.get("uc")
+    if uc is not None:
+        clauses.append(
+            "(cd_cnuc::text = %(uc)s::text or upper(coalesce(nome_uc, '')) = %(uc)s::text)"
+        )
+        params["uc"] = uc
+
+    ti = filters.get("ti")
+    if ti is not None:
+        clauses.append(
+            "(terrai_cod::text = %(ti)s::text or upper(coalesce(terrai_nom, '')) = %(ti)s::text)"
+        )
+        params["ti"] = ti
+
+    return " and ".join(clauses), params
+
+
+def _run_points_query(
+    day_value: date,
+    bbox: tuple[float, float, float, float],
+    filters: dict[str, Optional[str]],
+    limit: int,
+) -> dict[str, object]:
+    source = _safe_table(POINTS_SOURCE_TABLE or "marts.v_chart_focos_scatter")
+    where_sql, params = _build_points_where(day_value, bbox, filters)
+    params["limit_plus_one"] = int(limit) + 1
+    sql = f"""
+    select
+      lon::float8 as lon,
+      lat::float8 as lat,
+      1::int as n
+    from {source}
+    where {where_sql}
+    limit %(limit_plus_one)s;
+    """
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+            rows = cur.fetchall()
+
+    truncated = len(rows) > int(limit)
+    if truncated:
+        rows = rows[: int(limit)]
+
+    points = []
+    for lon, lat, n in rows:
+        points.append(
+            {
+                "lon": float(lon),
+                "lat": float(lat),
+                "n": int(n or 1),
+            }
+        )
+
+    return {
+        "date": day_value,
+        "bbox": [float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])],
+        "returned": len(points),
+        "limit": int(limit),
+        "truncated": bool(truncated),
+        "points": points,
+    }
+
+
+def _cached_points(key: str, run: Callable[[], dict], context: dict[str, object]) -> dict:
+    hit = key in points_cache
+    if hit:
+        out = points_cache[key]
+    else:
+        out = run()
+        points_cache[key] = out
+    logger.info("points cache=%s %s", "hit" if hit else "miss", context)
+    return out
+
+
+def _points_smoke_validate(
+    from_date: date,
+    to: date,
+    filters: dict[str, Optional[str]],
+) -> tuple[bool, bool]:
+    test_day = to - timedelta(days=1)
+    if test_day < from_date:
+        test_day = from_date
+    # Small bbox to keep smoke test cheap.
+    bbox = (-55.5, -16.5, -54.5, -15.5)
+    try:
+        result = _run_points_query(test_day, bbox, filters, max(1, POINTS_SMOKE_LIMIT))
+        return True, bool(int(result.get("returned", 0)) <= int(result.get("limit", 0)))
+    except Exception:
+        return False, False
 
 
 def _ascii_label(text: str) -> str:
@@ -1167,6 +1339,43 @@ def geo_overlay_qa(
     return out
 
 
+@app.get("/api/points", response_model=PointsResponse)
+def points(
+    request: Request,
+    day_value: date = Query(..., alias="date"),
+    bbox: str = Query(...),
+    limit: int = Query(default=POINTS_LIMIT_DEFAULT, ge=1, le=POINTS_LIMIT_HARD_CAP),
+    uf: Optional[str] = Query(default=None),
+    bioma: Optional[str] = Query(default=None),
+    mun: Optional[str] = Query(default=None),
+    uc: Optional[str] = Query(default=None),
+    ti: Optional[str] = Query(default=None),
+):
+    t0 = now_ms()
+    bbox_tuple = _parse_bbox(bbox)
+    filters = _normalize_filters(uf, bioma, mun, uc, ti)
+    zoom_bucket = _points_zoom_bucket(bbox_tuple)
+    base_key = _cache_key(request)
+    key = f"{base_key}|zb={zoom_bucket}"
+
+    def run():
+        return _run_points_query(day_value, bbox_tuple, filters, limit)
+
+    out = _cached_points(
+        key,
+        run,
+        {
+            "date": day_value,
+            "bbox": bbox_tuple,
+            "filters": _filters_payload(filters),
+            "limit": limit,
+            "zoom_bucket": zoom_bucket,
+            "ms": now_ms() - t0,
+        },
+    )
+    return out
+
+
 @app.get("/api/timeseries/total", response_model=TimeseriesResponse)
 def timeseries_total(
     request: Request,
@@ -1553,6 +1762,8 @@ def validate(
                 except HTTPException:
                     bounds_consistent = False
 
+        points_endpoint_ok, points_returned_le_limit = _points_smoke_validate(from_date, to, filters)
+
         return {
             "from": from_date,
             "to": to,
@@ -1565,6 +1776,8 @@ def validate(
             "break_monotonicity_ok": break_monotonicity_ok,
             "bounds_vs_geo_bbox_ratio": bounds_vs_geo_bbox_ratio,
             "bounds_consistent": bounds_consistent,
+            "points_endpoint_ok": points_endpoint_ok,
+            "points_returned_le_limit": points_returned_le_limit,
         }
 
     out = _cached(
