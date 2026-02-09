@@ -53,4 +53,16 @@ export const api = {
 
   fetchGeo: (entity, key, from, to, filters, signal) =>
     fetchJson('/api/geo', withFilters(from, to, filters, { entity, key }), signal),
+
+  points: (date, bbox, filters, limit, signal) =>
+    fetchJson(
+      '/api/points',
+      {
+        date,
+        bbox: Array.isArray(bbox) ? bbox.join(',') : bbox,
+        limit,
+        ...(filters || {}),
+      },
+      signal,
+    ),
 }

@@ -1,10 +1,14 @@
-﻿import L from 'leaflet'
+import L from 'leaflet'
 
 let map
 let layer
 let selectionOverlay
 let legendControl
 let legendEl
+let pointsLayer
+let pointsRaw
+let pointsDateLabel
+let viewportChangeHandler
 
 const BRAZIL_BOUNDS = [[-34.5, -74.5], [6.0, -28.0]]
 const FALLBACK_COLORS = ['#1a1b2f', '#ffd166', '#fca311', '#f77f00', '#d62828', '#5a189a']
@@ -157,6 +161,99 @@ function setLegend(choro, title) {
   `
 }
 
+function getViewportBbox() {
+  if (!map) return null
+  const b = map.getBounds()
+  if (!b.isValid()) return null
+  const minLon = b.getWest()
+  const minLat = b.getSouth()
+  const maxLon = b.getEast()
+  const maxLat = b.getNorth()
+  return [minLon, minLat, maxLon, maxLat]
+}
+
+function clusterRadius(count) {
+  if (count >= 1000) return 20
+  if (count >= 300) return 16
+  if (count >= 100) return 13
+  if (count >= 30) return 11
+  return 9
+}
+
+function renderPointsClusters() {
+  if (!pointsLayer) return
+  pointsLayer.clearLayers()
+  if (!pointsRaw?.length || !map) return
+
+  const b = map.getBounds()
+  if (!b.isValid()) return
+  const minLon = b.getWest()
+  const minLat = b.getSouth()
+  const maxLon = b.getEast()
+  const maxLat = b.getNorth()
+  const zoom = Math.max(0, Math.floor(map.getZoom()))
+  const cellSize = zoom >= 11 ? 34 : zoom >= 8 ? 48 : 64
+  const buckets = new Map()
+
+  for (const p of pointsRaw) {
+    const lon = Number(p.lon)
+    const lat = Number(p.lat)
+    const n = Number(p.n || 1)
+    if (!Number.isFinite(lon) || !Number.isFinite(lat)) continue
+    if (lon < minLon || lon > maxLon || lat < minLat || lat > maxLat) continue
+    const projected = map.project([lat, lon], zoom)
+    const bx = Math.floor(projected.x / cellSize)
+    const by = Math.floor(projected.y / cellSize)
+    const key = `${bx}:${by}`
+    const bucket = buckets.get(key)
+    if (!bucket) {
+      buckets.set(key, {
+        count: 1,
+        sumLon: lon,
+        sumLat: lat,
+        n,
+      })
+      continue
+    }
+    bucket.count += 1
+    bucket.sumLon += lon
+    bucket.sumLat += lat
+    bucket.n += n
+  }
+
+  for (const bucket of buckets.values()) {
+    const lon = bucket.sumLon / bucket.count
+    const lat = bucket.sumLat / bucket.count
+    if (bucket.count > 1) {
+      const count = Number(bucket.count || 0)
+      const marker = L.circleMarker([lat, lon], {
+        radius: clusterRadius(count),
+        color: '#ffe29a',
+        weight: 1.5,
+        fillColor: '#d62828',
+        fillOpacity: 0.74,
+      })
+      marker.bindTooltip(`Pontos: ${numberLabel(count)}`)
+      marker.on('click', () => {
+        map.setView([lat, lon], Math.min(zoom + 2, 14))
+      })
+      pointsLayer.addLayer(marker)
+      continue
+    }
+
+    const n = Number(bucket.n || 1)
+    const marker = L.circleMarker([lat, lon], {
+      radius: 3,
+      color: '#ffd166',
+      weight: 1,
+      fillColor: '#f77f00',
+      fillOpacity: 0.86,
+    })
+    marker.bindTooltip(`Focos: ${numberLabel(n)}<br/>Data: ${pointsDateLabel || '-'}`)
+    pointsLayer.addLayer(marker)
+  }
+}
+
 export function initMap(onFeaturePick) {
   map = L.map('map', { zoomControl: true })
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
@@ -165,8 +262,17 @@ export function initMap(onFeaturePick) {
   }).addTo(map)
   map.fitBounds(BRAZIL_BOUNDS)
   layer = L.geoJSON({ type: 'FeatureCollection', features: [] }).addTo(map)
+  pointsLayer = L.layerGroup().addTo(map)
+  pointsRaw = []
+  pointsDateLabel = null
   selectionOverlay = null
+  viewportChangeHandler = null
   setLegend(null, 'Legenda')
+
+  map.on('moveend zoomend', () => {
+    renderPointsClusters()
+    if (viewportChangeHandler) viewportChangeHandler()
+  })
 
   return {
     setChoropleth: (choro, options = {}) => {
@@ -234,6 +340,32 @@ export function initMap(onFeaturePick) {
 
       layer = L.geoJSON(geojson, { style, onEachFeature }).addTo(map)
     },
+    setPointsData: (payload) => {
+      const points = Array.isArray(payload?.points) ? payload.points : []
+      pointsDateLabel = payload?.date ? String(payload.date) : null
+      if (!points.length) {
+        pointsRaw = []
+        if (pointsLayer) pointsLayer.clearLayers()
+        return
+      }
+      pointsRaw = points
+        .filter((p) => Number.isFinite(Number(p.lon)) && Number.isFinite(Number(p.lat)))
+        .map((p) => ({
+          lon: Number(p.lon),
+          lat: Number(p.lat),
+          n: Number(p.n) || 1,
+        }))
+      renderPointsClusters()
+    },
+    clearPoints: () => {
+      pointsRaw = []
+      pointsDateLabel = null
+      if (pointsLayer) pointsLayer.clearLayers()
+    },
+    onViewportChange: (fn) => {
+      viewportChangeHandler = fn
+    },
+    getViewportBbox: () => getViewportBbox(),
     setSelectionOverlay: (geojson) => {
       if (selectionOverlay) {
         selectionOverlay.remove()

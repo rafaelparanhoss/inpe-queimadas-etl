@@ -45,6 +45,9 @@ export function initUi() {
   const elLast30 = document.getElementById('last30')
   const elShowMunLayer = document.getElementById('showMunLayer')
   const elMunLayerHint = document.getElementById('munLayerHint')
+  const elShowPoints = document.getElementById('showPoints')
+  const elPointsBadge = document.getElementById('pointsBadge')
+  const elPointsHint = document.getElementById('pointsHint')
   const ufLabel = document.getElementById('ufLabel')
   const biomaLabel = document.getElementById('biomaLabel')
   const munLabel = document.getElementById('munLabel')
@@ -76,6 +79,7 @@ export function initUi() {
     onClear: (fn) => elClear.addEventListener('click', fn),
     onLast30: (fn) => elLast30.addEventListener('click', fn),
     onMunLayerToggle: (fn) => elShowMunLayer.addEventListener('change', () => fn(elShowMunLayer.checked)),
+    onPointsToggle: (fn) => elShowPoints.addEventListener('change', () => fn(elShowPoints.checked)),
     onChipRemove: (fn) => chips.addEventListener('click', (ev) => {
       const target = ev.target
       if (!(target instanceof HTMLElement)) return
@@ -132,6 +136,31 @@ export function initUi() {
     },
     setMunLayerHint: (text) => {
       elMunLayerHint.textContent = text || ''
+    },
+    setPointsToggle: ({ checked }) => {
+      elShowPoints.checked = Boolean(checked)
+    },
+    setPointsHint: (text) => {
+      elPointsHint.textContent = text || ''
+    },
+    setPointsBadge: (payload) => {
+      if (!payload) {
+        elPointsBadge.className = 'pill hidden'
+        elPointsBadge.textContent = ''
+        return
+      }
+      if (payload.error) {
+        elPointsBadge.className = 'pill error'
+        elPointsBadge.textContent = 'erro'
+        return
+      }
+      const returned = Number(payload.returned || 0)
+      const limit = Number(payload.limit || 0)
+      const truncated = Boolean(payload.truncated)
+      elPointsBadge.className = truncated ? 'pill warn' : 'pill'
+      elPointsBadge.textContent = truncated
+        ? `truncado ${formatInt(returned)}/${formatInt(limit)}`
+        : `${formatInt(returned)} pontos`
     },
     setMunGuardrail: (note) => {
       munGuardrail.textContent = note || ''

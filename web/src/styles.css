@@ -127,6 +127,45 @@ button:hover {
   color: var(--muted);
 }
 
+.pointsToggleRow {
+  align-items: center;
+  justify-content: space-between;
+}
+
+#pointsHint {
+  margin-top: 6px;
+  color: var(--muted);
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid #3a578f;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #cce0ff;
+  background: rgba(26, 41, 71, 0.9);
+}
+
+.pill.warn {
+  border-color: rgba(245, 158, 11, 0.65);
+  color: #ffd99a;
+  background: rgba(75, 47, 12, 0.82);
+}
+
+.pill.error {
+  border-color: rgba(239, 68, 68, 0.75);
+  color: #fecaca;
+  background: rgba(80, 22, 28, 0.85);
+}
+
+.hidden {
+  display: none !important;
+}
+
 .meta {
   margin-top: 16px;
   font-size: 16px;

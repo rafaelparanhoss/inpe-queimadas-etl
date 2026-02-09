@@ -62,14 +62,34 @@ function startRequestCycle() {
   return abort
 }
 
+let pointsAbort = null
+
+function startPointsRequestCycle() {
+  if (pointsAbort) pointsAbort.abort()
+  pointsAbort = new AbortController()
+  return pointsAbort
+}
+
+function resolvePointsDate(from, to) {
+  if (!from) return { date: null, note: '' }
+  const expectedTo = addDaysIso(from, 1)
+  if (to === expectedTo) {
+    return { date: from, note: '' }
+  }
+  return { date: from, note: 'MVP: pontos para 1 dia (from).' }
+}
+
 function setFilterUi() {
   const filters = pickFilters()
   const ufSelected = Boolean(filters.uf)
   const showMunLayer = Boolean(state.ui?.showMunLayer && ufSelected)
+  const showPoints = Boolean(state.ui?.showPoints)
   ui.setUfSelect(filters.uf)
   ui.setFilterLabels(filters)
   ui.setActiveChips(filters)
   ui.setMunLayerToggle({ enabled: ufSelected, checked: showMunLayer })
+  ui.setPointsToggle({ checked: showPoints })
+  ui.setPointsHint('Pontos usam 1 dia (from) e bbox visivel do mapa.')
 
   if (!ufSelected) {
     ui.setMunLayerHint('Para municipios, selecione uma UF.')
@@ -213,6 +233,43 @@ function toggleFilterAndRefresh(filterKey, value, { withBounds = true } = {}) {
   refreshAllDebounced()
 }
 
+async function refreshPointsLayer() {
+  const showPoints = Boolean(state.ui?.showPoints)
+  if (!showPoints) {
+    mapCtl.clearPoints()
+    ui.setPointsBadge(null)
+    return ''
+  }
+
+  const { from, to } = state
+  if (!from || !to) return ''
+  const filters = pickFilters()
+  const bbox = mapCtl.getViewportBbox()
+  if (!bbox) return ''
+
+  const { date, note } = resolvePointsDate(from, to)
+  if (!date) return ''
+
+  const abort = startPointsRequestCycle()
+  const signal = abort.signal
+  try {
+    const payload = await api.points(date, bbox, filters, 20000, signal)
+    mapCtl.setPointsData(payload)
+    ui.setPointsBadge(payload)
+    if (note) {
+      ui.setPointsHint(note)
+    } else {
+      ui.setPointsHint('Pontos usam 1 dia (from) e bbox visivel do mapa.')
+    }
+  } catch (err) {
+    if (err?.name === 'AbortError') return ''
+    mapCtl.clearPoints()
+    ui.setPointsBadge({ error: true })
+    return `Pontos indisponiveis: ${String(err?.message || err)}`
+  }
+  return ''
+}
+
 async function refreshAll() {
   ensureValidFilterState()
   const { from, to } = state
@@ -341,12 +398,18 @@ async function refreshAll() {
       return
     }
 
+    const pointsError = await refreshPointsLayer()
+
     if (munLayerError) {
       ui.setStatus(munLayerError)
       return
     }
     if (overlayError) {
       ui.setStatus(overlayError)
+      return
+    }
+    if (pointsError) {
+      ui.setStatus(pointsError)
       return
     }
 
@@ -374,10 +437,19 @@ function applyInputs() {
 function clearFilters() {
   const { from, to } = defaultRangeLast30()
   clearDimensionFilters()
+  if (pointsAbort) {
+    pointsAbort.abort()
+    pointsAbort = null
+  }
+  if (state.ui) {
+    state.ui.showPoints = false
+  }
   pendingOverlayFocus = null
   setState({ from, to })
   ui.setInputs({ from, to })
   mapCtl.clearSelectionOverlay()
+  mapCtl.clearPoints()
+  ui.setPointsBadge(null)
   setFilterUi()
   mapCtl.fitBrazil()
   void refreshAll()
@@ -389,9 +461,17 @@ const refreshAllDebounced = debounce(() => {
   void refreshAll()
 }, 150)
 
+const refreshPointsDebounced = debounce(() => {
+  if (!state.ui?.showPoints) return
+  void refreshPointsLayer()
+}, 320)
+
 const ui = initUi()
 const mapCtl = initMap((filterKey, value) => {
   toggleFilterAndRefresh(filterKey, value, { withBounds: false })
+})
+mapCtl.onViewportChange(() => {
+  refreshPointsDebounced()
 })
 const chartsCtl = initCharts((filterKey, item) => {
   const key = item?.key
@@ -429,6 +509,22 @@ ui.onMunLayerToggle((checked) => {
   setMunLayerEnabled(checked)
   setFilterUi()
   refreshAllDebounced()
+})
+ui.onPointsToggle((checked) => {
+  if (state.ui) {
+    state.ui.showPoints = Boolean(checked)
+  }
+  setFilterUi()
+  if (!checked) {
+    if (pointsAbort) {
+      pointsAbort.abort()
+      pointsAbort = null
+    }
+    mapCtl.clearPoints()
+    ui.setPointsBadge(null)
+    return
+  }
+  void refreshPointsLayer()
 })
 ui.onChipRemove((filterKey) => {
   if (filterKey === 'uf') {

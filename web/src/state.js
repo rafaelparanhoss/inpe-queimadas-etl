@@ -8,6 +8,7 @@ export const state = {
   ti: null,
   ui: {
     showMunLayer: false,
+    showPoints: false,
   },
   abort: null,
 }
