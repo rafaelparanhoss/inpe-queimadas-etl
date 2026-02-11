@@ -1,9 +1,0 @@
-version: 1
-description: path migration map for short sqlm aux filenames on windows
-migrations:
-  - old_path: sqlm/marts/aux/031_v_geo_focos_diario_uf_poly_by_day_superset_full.sql
-    new_path: sqlm/marts/aux/031_uf_poly_day_full.sql
-  - old_path: sqlm/marts/aux/032_v_geo_focos_diario_uf_poly_by_day_superset_full_viz.sql
-    new_path: sqlm/marts/aux/032_uf_poly_day_viz.sql
-  - old_path: sqlm/marts/aux/045_v_geo_focos_diario_mun_poly_by_day_superset_full_viz.sql
-    new_path: sqlm/marts/aux/045_mun_poly_day_viz.sql
