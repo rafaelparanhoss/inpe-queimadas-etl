@@ -26,6 +26,9 @@ where file_date = :'DATE'::date
   and geom is not null
   and (bioma_checked=false or uc_checked=false or ti_checked=false);
 
+create temp table tmp_run_ctx on commit drop as
+select :'DATE'::date as run_date;
+
 create index tmp_src_geom_gix on tmp_src using gist (geom);
 analyze tmp_src;
 
@@ -84,7 +87,7 @@ begin
       bioma_checked = true
     from tmp_bioma tb
     where f.event_hash = tb.event_hash
-      and f.file_date = :'DATE'::date;
+      and f.file_date = (select run_date from tmp_run_ctx);
   end if;
 end
 $$;
@@ -168,7 +171,7 @@ begin
       uc_checked = true
     from tmp_uc tu
     where f.event_hash = tu.event_hash
-      and f.file_date = :'DATE'::date;
+      and f.file_date = (select run_date from tmp_run_ctx);
   end if;
 end
 $$;
@@ -238,7 +241,7 @@ begin
       ti_checked = true
     from tmp_ti tt
     where f.event_hash = tt.event_hash
-      and f.file_date = :'DATE'::date;
+      and f.file_date = (select run_date from tmp_run_ctx);
   end if;
 end
 $$;
