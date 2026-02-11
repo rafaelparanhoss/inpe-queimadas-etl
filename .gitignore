@@ -16,6 +16,7 @@ data/reports/
 .coverage
 htmlcov/
 .cache/
+.uv_cache/
 audit/
 logs/*
 !logs/.gitkeep
