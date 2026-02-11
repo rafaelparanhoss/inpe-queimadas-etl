@@ -1,237 +1,30 @@
-﻿# INPE Queimadas - ETL diário (Brasil) -> PostGIS
+# INPE Queimadas ETL v1.x
 
-ETL geoespacial para ingestão diária de focos de queimadas (INPE, CSV público) e carga em PostGIS, com camadas `raw/curated` para auditoria e análise.
+ETL de focos INPE para Postgres/PostGIS + app operacional (`api/` + `web/`).
 
-## Stack
-Python 3.11 | pandas | requests | psycopg | PostGIS | Docker | uv
+## Comandos essenciais
+```powershell
+# ETL (1 dia)
+python -m etl.app run --date YYYY-MM-DD --checks --engine direct --mode dashboard
 
-## Decisões técnicas
-- **`raw` vs `curated`**
-  - `raw`: preserva o dado "como veio" (inclui `props` completo) para auditoria/reprocessamento.
-  - `curated`: tabela enxuta, padronizada e indexada para consulta espacial.
-- **`props` em `jsonb`**
-  - evita migração de schema quando a fonte muda colunas;
-  - mantém rastreabilidade e permite inspeção pontual.
-- **Dedup por `event_hash`**
-  - idempotência (rodar a mesma data não duplica);
-  - `ON CONFLICT DO NOTHING`.
-- **SRID 4326**
-  - a fonte já vem em lat/lon (WGS84).
-- **Fallback mensal para historico**
-  - para datas antigas (default 45 dias), usa o CSV mensal e filtra o dia.
+# Validacoes
+python -m etl.validate_repo
+python -m etl.validate_marts --apply-minimal --dry-run --engine direct
 
-## Banco
-Tabelas:
-- `raw.inpe_focos`
-- `curated.inpe_focos`
-- `curated.inpe_focos_enriched`
+# API
+cd api
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --log-level info
 
-Índices:
-- GiST em `geom`
-- B-tree em `file_date`
+# WEB
+cd web
+npm run dev
 
-## Estrutura do projeto
-- `sql/ref`: schemas e tabelas de referência
-- `sql/enrich`: enriquecimento espacial
-- `sql/marts`: tabelas analíticas
-- `scripts`: wrapper opcional (`run.sh`)
-- `devtools/legacy`: wrappers antigos (opcional)
-
-## Como rodar
-
-### 1) Subir PostGIS
-```bash
-docker compose up -d
+# Smoke
+powershell -ExecutionPolicy Bypass -File scripts\smoke.ps1 -BaseUrl "http://127.0.0.1:8000"
 ```
 
-### 2) Preparar ambiente Python
-```bash
-uv sync
-uv pip install -e .
-```
+## Regra de range
+- Todos os endpoints usam `[from,to)` (to exclusivo).
+- Para 1 dia: `from=D` e `to=D+1`.
 
-### 2.1) Comandos oficiais (python)
-Os comandos python sao os oficiais. `scripts/run.sh` e opcional.
-```bash
-uv run python -m etl.app run --date 2026-01-18 --checks
-uv run python -m etl.app report --date 2026-01-18
-uv run python -m etl.app report-range --start 2026-01-01 --end 2026-01-31
-uv run python -m etl.app reprocess --date 2026-01-18
-uv run python -m etl.app checks --date 2026-01-18
-uv run python -m etl.app today
-```
-nota report-range: total inclui focos sem municipio; pct_com_mun e missing_mun medem a qualidade do join espacial.
-
-### Analytics pack (intervalo)
-```bash
-uv run python -m etl.app analytics-range --start 2025-01-01 --end 2026-01-20
-```
-Opcional:
-```bash
-uv run python -m etl.app analytics-range --start 2025-01-01 --end 2026-01-20 --out data/reports/analytics_custom --top-n 100
-```
-Outputs (data/reports/analytics_<start>_<end>/):
-- quality_daily.csv (day, n_total, n_com_mun, pct_com_mun, missing_mun)
-- seasonality_uf.csv (uf, month, n_focos, focos_por_100km2, rank_no_mes)
-- hotspots_mun_period.csv (top N do periodo, por municipio)
-- top_shifts_uf.csv (delta entre primeiros e ultimos 90 dias do intervalo)
-Flags (defaults):
-- --top-n 100
-- --shifts-top 27
-- --shifts-sort abs|pct
-Notas:
-- delta_abs = n_q4 - n_q1 (q1 = primeiros 90 dias, q4 = ultimos 90 dias do intervalo)
-- delta_pct = variacao percentual vs n_q1 (null quando n_q1 = 0)
-
-### Figuras e notebook
-Gerar os packs e as figuras:
-```bash
-uv run python -m etl.app analytics-range --start 2025-01-01 --end 2026-01-20
-uv run python -m etl.app report-range --start 2025-01-01 --end 2026-01-20
-uv run python -m etl.app make-figures --start 2025-01-01 --end 2026-01-20
-```
-Notebook:
-- `notebooks/annual_analytics_2025_2026.ipynb`
-
-### Analise anual
-```bash
-uv run python -m etl.app report-range --start 2025-01-01 --end 2026-01-20
-```
-Outputs (data/reports/range_<start>_<end>/):
-- summary.txt
-- br_daily.csv
-- uf_daily.csv
-- uf_monthly.csv
-- uf_period.csv
-- uf_top.csv
-- mun_top.csv
-- mun_period.csv
-- mun_monthly_top.csv
-
-## Dashboard-ready datasets
-Views (geo):
-- `marts.geo_focos_diario_municipio` (day, uf, cd_mun, nm_mun, n_focos, geom, area_km2)
-- `marts.geo_focos_diario_uf` (day, uf, cd_mun, nm_mun, n_focos, geom, area_km2)
-
-Sanity checks (pgadmin):
-```sql
-select count(*) as n
-from marts.focos_diario_municipio
-where day between '2025-08-01'::date and '2025-08-31'::date;
-
-select count(*) as n
-from marts.geo_focos_diario_municipio
-where day between '2025-08-01'::date and '2025-08-31'::date;
-
-select day, uf, cd_mun, nm_mun, n_focos, area_km2
-from marts.geo_focos_diario_municipio
-limit 5;
-
-select day, uf, cd_mun, nm_mun, n_focos, area_km2
-from marts.geo_focos_diario_uf
-limit 5;
-```
-
-Atualizacao incremental:
-```bash
-uv run python -m etl.app postprocess-range --start YYYY-MM-DD --end YYYY-MM-DD
-```
-
-### Superset (local scaffold)
-```bash
-cd dash/superset
-docker compose up -d
-```
-Login: http://localhost:8088 (admin / admin).
-
-Conexao com Postgres (Data > Databases):
-```
-postgresql+psycopg2://geoetl:geoetl@host.docker.internal:5432/geoetl
-```
-Datasets sugeridos:
-- `marts.geo_focos_diario_municipio`
-- `marts.geo_focos_diario_uf`
-- `marts.focos_diario_municipio`
-- `marts.focos_diario_uf`
-- `marts.focos_mensal_municipio`
-- `marts.focos_mensal_uf`
-
-### 3) Rodar tudo (ref -> ingestao INPE -> enrich -> marts)
-```bash
-uv run python -m etl.app run --date 2026-01-18
-uv run python -m etl.app run --date 2026-01-18 --checks
-```
-
-### 3.1) Teste manual (race)
-```bash
-docker compose down -v
-docker compose up -d
-python -m uv run python -m etl.app ref
-```
-
-### 4) Rodar etapas isoladas
-```bash
-uv run python -m etl.app ref
-uv run python -m etl.app enrich --date 2026-01-18
-uv run python -m etl.app marts --date 2026-01-18
-```
-
-### 5) Rebuild total (marts) (legacy)
-```bash
-devtools/legacy/rebuild_marts.sh
-```
-
-### 6) Exemplo de validacoes
-```bash
-docker exec -it geoetl_postgis psql -U geoetl -d geoetl -c "select count(*) from curated.inpe_focos_enriched;"
-
-docker exec -it geoetl_postgis psql -U geoetl -d geoetl -c "select count(*) - count(distinct event_hash) from curated.inpe_focos_enriched;"
-```
-
-### 7) Reprocessar um dia
-```bash
-uv run python -m etl.app reprocess --date 2026-01-18
-uv run python -m etl.app reprocess --date 2026-01-18 --dry-run
-```
-
-### 8) Smoke checks
-```bash
-uv run python -m etl.app checks
-uv run python -m etl.app checks --date 2026-01-18
-```
-
-### 9) OK esperado (reprocess)
-raw_n=curated_n e marts_day_sum=curated_n
-
-
-
-### 10) Rodar hoje
-```bash
-uv run python -m etl.app today
-uv run python -m etl.app today --date 2026-01-18
-```
-
-### 11) Gerar report de um dia
-```bash
-uv run python -m etl.app report --date 2026-01-18
-```
-
-### 12) GitHub Actions (artifacts)
-- ver em: Actions -> workflow "daily" -> artifacts
-
-## Logs
-Arquivo gerado em `data/logs/etl.log`.
-
-## Configuração
-Arquivo `.env` (não versionado). Use `.env.example` como referência.
-Para wrappers legacy, use `.env.local` (ver `.env.local.example`).
-Env vars extras:
-- `INPE_MONTHLY_BASE_URL`
-- `INPE_RETENTION_DAYS`
-
-## Roadmap
-- [ ] Rodar intervalo de datas (`--start-date/--end-date` ou `--backfill`)
-- [ ] Incremental automático (último arquivo disponível)
-- [ ] Evitar reprocessar datas já carregadas (`file_date`)
-- [ ] Agregação por município (IBGE) e tabela diária `focos_por_municipio`
-- [ ] Métricas de execução (tempo, inseridos, duplicados, descartados)
+Runbook operacional: `docs/runbook.md`.

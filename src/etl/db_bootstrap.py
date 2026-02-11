@@ -6,6 +6,7 @@ import subprocess
 import time
 
 from .config import settings
+import psycopg
 
 log = logging.getLogger("db_bootstrap")
 
@@ -65,7 +66,83 @@ def wait_psql_ready(
         time.sleep(interval_sec)
 
 
-def ensure_database(timeout_sec: int = 60, interval_sec: float = 2.0) -> None:
+def _detect_engine(engine: str | None) -> str:
+    if engine:
+        if engine not in ("docker", "direct"):
+            raise ValueError(f"invalid engine: {engine}")
+        return engine
+    if os.getenv("DOCKER_CONTAINER") or os.getenv("DB_CONTAINER"):
+        return "docker"
+    return "direct"
+
+
+def _ensure_database_direct() -> None:
+    db_user = os.getenv("DB_USER", settings.db_user)
+    db_name = os.getenv("DB_NAME", settings.db_name)
+    db_password = os.getenv("DB_PASSWORD", settings.db_password)
+    admin_user = os.getenv("DB_ADMIN_USER", db_user)
+    admin_password = os.getenv("DB_ADMIN_PASSWORD", db_password)
+    host = os.getenv("DB_HOST", settings.db_host)
+    port = os.getenv("DB_PORT", settings.db_port)
+
+    def _connect(db: str, user: str, password: str):
+        return psycopg.connect(
+            host=host,
+            port=port,
+            dbname=db,
+            user=user,
+            password=password,
+        )
+
+    try:
+        with _connect(db_name, db_user, db_password) as conn, conn.cursor() as cur:
+            cur.execute("select 1;")
+            cur.execute("create extension if not exists postgis;")
+            for schema in ("raw", "curated", "ref", "ref_core", "marts"):
+                cur.execute(f"create schema if not exists {schema};")
+            conn.commit()
+        log.info("[db_bootstrap] ready (direct)")
+        return
+    except Exception:
+        pass
+
+    try:
+        with _connect("postgres", admin_user, admin_password) as admin, admin.cursor() as cur:
+            cur.execute("select 1 from pg_roles where rolname = %s;", (db_user,))
+            if cur.fetchone() is None:
+                cur.execute(f"create role {db_user} login password %s;", (db_password,))
+                log.info("[db_bootstrap] role created (direct)")
+            else:
+                log.info("[db_bootstrap] role exists (direct)")
+
+            cur.execute("select 1 from pg_database where datname = %s;", (db_name,))
+            if cur.fetchone() is None:
+                cur.execute(f"create database {db_name} owner {db_user};")
+                log.info("[db_bootstrap] db created (direct)")
+            else:
+                log.info("[db_bootstrap] db exists (direct)")
+            admin.commit()
+    except Exception as exc:
+        raise RuntimeError(
+            "direct bootstrap failed; ensure DB is reachable and user can create db/role"
+        ) from exc
+
+    with _connect(db_name, db_user, db_password) as conn, conn.cursor() as cur:
+        try:
+            cur.execute("create extension if not exists postgis;")
+        except Exception as exc:
+            raise RuntimeError("postgis extension not available or permission denied") from exc
+        for schema in ("raw", "curated", "ref", "ref_core", "marts"):
+            cur.execute(f"create schema if not exists {schema};")
+        conn.commit()
+    log.info("[db_bootstrap] ready (direct)")
+
+
+def ensure_database(timeout_sec: int = 60, interval_sec: float = 2.0, engine: str | None = None) -> None:
+    engine = _detect_engine(engine)
+    if engine == "direct":
+        return _ensure_database_direct()
+
     container = os.getenv("DB_CONTAINER", "geoetl_postgis")
     db_user = os.getenv("DB_USER", settings.db_user)
     db_name = os.getenv("DB_NAME", settings.db_name)
