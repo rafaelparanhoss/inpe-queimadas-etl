@@ -94,6 +94,16 @@ jobs:
           raise SystemExit(f"database not ready after wait: {err}")
           PY
 
+      - name: resolve db container id
+        run: |
+          db_container="$(docker ps --filter "ancestor=postgis/postgis:16-3.4" --format '{{.ID}}' | head -n1)"
+          if [ -z "$db_container" ]; then
+            echo "postgis container not found" >&2
+            docker ps -a
+            exit 1
+          fi
+          echo "DB_CONTAINER=$db_container" >> "$GITHUB_ENV"
+
       - name: resolve date
         id: run_date
         run: |
@@ -116,7 +126,7 @@ jobs:
       - name: run pipeline
         run: |
           date_str="${{ steps.run_date.outputs.date }}"
-          uv run python -m etl.app run --date "$date_str" --checks --engine direct
+          uv run python -m etl.app run --date "$date_str" --checks --engine docker
 
       - name: validate marts dry-run
         run: |
