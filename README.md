@@ -45,6 +45,7 @@ Runbook operacional: `docs/runbook.md`.
    - `buildCommand: pip install -r requirements.txt`
    - `startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT`
 4. No painel do service, configure as env vars minimas:
+   - `PYTHON_VERSION` (`3.11.11`, recomendado)
    - `DB_HOST`
    - `DB_PORT`
    - `DB_NAME`
@@ -55,5 +56,6 @@ Runbook operacional: `docs/runbook.md`.
 5. Deploy e teste:
    - `/health`
    - `/api/summary?from=2025-08-01&to=2025-09-01`
+6. O banco precisa ser Postgres acessivel pela internet (nao `localhost`/Docker local da sua maquina).
 
 `api/.env` e `web/.env.local` sao locais; nunca comitar segredos.
