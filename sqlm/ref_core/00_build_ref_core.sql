@@ -50,9 +50,7 @@ begin
   elsif to_regclass('ref.tis_4326') is not null then src_ti := 'ref.tis_4326';
   elsif to_regclass('ref.tis_poligonaisPolygon') is not null then src_ti := 'ref.tis_poligonaisPolygon';
   elsif to_regclass('ref.tis_4326') is not null then src_ti := 'ref.tis_4326';
-  else
-    src_ti := null;
-    raise notice 'nenhuma fonte TI encontrada em schema ref; ref_core.ti sera criada vazia';
+  else raise exception 'nenhuma fonte TI encontrada em schema ref';
   end if;
 
   -- escolher fonte BIOMA (ordem fixa)
@@ -60,9 +58,7 @@ begin
   elsif to_regclass('ref_core.biomas_4326') is not null then src_bioma := 'ref_core.biomas_4326';
   elsif to_regclass('ref.biomas_4326_sub') is not null then src_bioma := 'ref.biomas_4326_sub';
   elsif to_regclass('ref.biomas_4326') is not null then src_bioma := 'ref.biomas_4326';
-  else
-    src_bioma := null;
-    raise notice 'nenhuma fonte BIOMA encontrada em schema ref; ref_core.bioma sera criada vazia';
+  else raise exception 'nenhuma fonte BIOMA encontrada em schema ref';
   end if;
 
   raise notice 'ref_core.uc <= %', src_uc;
@@ -140,156 +136,132 @@ begin
   execute 'create index if not exists ix_ref_core_uc_geom on ref_core.uc using gist(geom)';
   execute 'create index if not exists ix_ref_core_uc_cd on ref_core.uc(cd_cnuc)';
 
-  if src_ti is null then
-    execute 'drop table if exists ref_core.ti cascade';
-    execute '
-      create table ref_core.ti (
-        ti_cod text,
-        ti_nome text,
-        geom geometry(MultiPolygon,4326)
-      )';
-    execute 'create index if not exists ix_ref_core_ti_geom on ref_core.ti using gist(geom)';
-    execute 'create index if not exists ix_ref_core_ti_cd on ref_core.ti(ti_cod)';
-  else
-    select column_name into ti_geom
-    from information_schema.columns
-    where table_schema = ti_schema and table_name = ti_table and udt_name = 'geometry'
-    order by ordinal_position
-    limit 1;
+  select column_name into ti_geom
+  from information_schema.columns
+  where table_schema = ti_schema and table_name = ti_table and udt_name = 'geometry'
+  order by ordinal_position
+  limit 1;
 
-    if ti_geom is null then
-      raise exception 'no geometry column in %.%', ti_schema, ti_table;
-    end if;
-
-    ti_code_expr := '';
-    foreach col in array ti_code_candidates loop
-      if exists (
-        select 1 from information_schema.columns
-        where table_schema = ti_schema and table_name = ti_table and column_name = col
-      ) then
-        if ti_code_expr = '' then
-          ti_code_expr := format('nullif(trim(%I::text),'''')', col);
-        else
-          ti_code_expr := ti_code_expr || format(', nullif(trim(%I::text),'''')', col);
-        end if;
-      end if;
-    end loop;
-
-    if ti_code_expr = '' then
-      raise exception 'no ti code column in %.%', ti_schema, ti_table;
-    end if;
-    ti_code_expr := 'coalesce(' || ti_code_expr || ')';
-
-    ti_name_expr := '';
-    foreach col in array ti_name_candidates loop
-      if exists (
-        select 1 from information_schema.columns
-        where table_schema = ti_schema and table_name = ti_table and column_name = col
-      ) then
-        if ti_name_expr = '' then
-          ti_name_expr := format('nullif(trim(%I::text),'''')', col);
-        else
-          ti_name_expr := ti_name_expr || format(', nullif(trim(%I::text),'''')', col);
-        end if;
-      end if;
-    end loop;
-
-    if ti_name_expr = '' then
-      ti_name_expr := ti_code_expr;
-    else
-      ti_name_expr := 'coalesce(' || ti_name_expr || ')';
-    end if;
-
-    execute 'drop table if exists ref_core.ti cascade';
-    execute format($q$
-      create table ref_core.ti as
-      select
-        %s as ti_cod,
-        %s as ti_nome,
-        st_multi(st_collectionextract(st_makevalid(st_transform(%I, 4326)), 3))::geometry(MultiPolygon,4326) as geom
-      from %I.%I
-      where %I is not null
-        and %s is not null
-    $q$, ti_code_expr, ti_name_expr, ti_geom, ti_schema, ti_table, ti_geom, ti_code_expr);
-
-    execute 'create index if not exists ix_ref_core_ti_geom on ref_core.ti using gist(geom)';
-    execute 'create index if not exists ix_ref_core_ti_cd on ref_core.ti(ti_cod)';
+  if ti_geom is null then
+    raise exception 'no geometry column in %.%', ti_schema, ti_table;
   end if;
 
-  if src_bioma is null then
-    execute 'drop table if exists ref_core.bioma cascade';
-    execute '
-      create table ref_core.bioma (
-        cd_bioma text,
-        bioma text,
-        geom geometry(MultiPolygon,4326)
-      )';
-    execute 'create index if not exists ix_ref_core_bioma_geom on ref_core.bioma using gist(geom)';
-    execute 'create index if not exists ix_ref_core_bioma_cd on ref_core.bioma(cd_bioma)';
-  else
-    select column_name into bioma_geom
-    from information_schema.columns
-    where table_schema = bioma_schema and table_name = bioma_table and udt_name = 'geometry'
-    order by ordinal_position
-    limit 1;
-
-    if bioma_geom is null then
-      raise exception 'no geometry column in %.%', bioma_schema, bioma_table;
-    end if;
-
-    bioma_code_expr := '';
-    foreach col in array bioma_code_candidates loop
-      if exists (
-        select 1 from information_schema.columns
-        where table_schema = bioma_schema and table_name = bioma_table and column_name = col
-      ) then
-        if bioma_code_expr = '' then
-          bioma_code_expr := format('nullif(trim(%I::text),'''')', col);
-        else
-          bioma_code_expr := bioma_code_expr || format(', nullif(trim(%I::text),'''')', col);
-        end if;
+  ti_code_expr := '';
+  foreach col in array ti_code_candidates loop
+    if exists (
+      select 1 from information_schema.columns
+      where table_schema = ti_schema and table_name = ti_table and column_name = col
+    ) then
+      if ti_code_expr = '' then
+        ti_code_expr := format('nullif(trim(%I::text),'''')', col);
+      else
+        ti_code_expr := ti_code_expr || format(', nullif(trim(%I::text),'''')', col);
       end if;
-    end loop;
-
-    if bioma_code_expr = '' then
-      raise exception 'no bioma code column in %.%', bioma_schema, bioma_table;
     end if;
-    bioma_code_expr := 'coalesce(' || bioma_code_expr || ')';
+  end loop;
 
-    bioma_name_expr := '';
-    foreach col in array bioma_name_candidates loop
-      if exists (
-        select 1 from information_schema.columns
-        where table_schema = bioma_schema and table_name = bioma_table and column_name = col
-      ) then
-        if bioma_name_expr = '' then
-          bioma_name_expr := format('nullif(trim(%I::text),'''')', col);
-        else
-          bioma_name_expr := bioma_name_expr || format(', nullif(trim(%I::text),'''')', col);
-        end if;
-      end if;
-    end loop;
-
-    if bioma_name_expr = '' then
-      bioma_name_expr := bioma_code_expr;
-    else
-      bioma_name_expr := 'coalesce(' || bioma_name_expr || ')';
-    end if;
-
-    execute 'drop table if exists ref_core.bioma cascade';
-    execute format($q$
-      create table ref_core.bioma as
-      select
-        %s as cd_bioma,
-        %s as bioma,
-        st_multi(st_collectionextract(st_makevalid(st_transform(%I, 4326)), 3))::geometry(MultiPolygon,4326) as geom
-      from %I.%I
-      where %I is not null
-    $q$, bioma_code_expr, bioma_name_expr, bioma_geom, bioma_schema, bioma_table, bioma_geom);
-
-    execute 'create index if not exists ix_ref_core_bioma_geom on ref_core.bioma using gist(geom)';
-    execute 'create index if not exists ix_ref_core_bioma_cd on ref_core.bioma(cd_bioma)';
+  if ti_code_expr = '' then
+    raise exception 'no ti code column in %.%', ti_schema, ti_table;
   end if;
+  ti_code_expr := 'coalesce(' || ti_code_expr || ')';
+
+  ti_name_expr := '';
+  foreach col in array ti_name_candidates loop
+    if exists (
+      select 1 from information_schema.columns
+      where table_schema = ti_schema and table_name = ti_table and column_name = col
+    ) then
+      if ti_name_expr = '' then
+        ti_name_expr := format('nullif(trim(%I::text),'''')', col);
+      else
+        ti_name_expr := ti_name_expr || format(', nullif(trim(%I::text),'''')', col);
+      end if;
+    end if;
+  end loop;
+
+  if ti_name_expr = '' then
+    ti_name_expr := ti_code_expr;
+  else
+    ti_name_expr := 'coalesce(' || ti_name_expr || ')';
+  end if;
+
+  execute 'drop table if exists ref_core.ti cascade';
+  execute format($q$
+    create table ref_core.ti as
+    select
+      %s as ti_cod,
+      %s as ti_nome,
+      st_multi(st_collectionextract(st_makevalid(st_transform(%I, 4326)), 3))::geometry(MultiPolygon,4326) as geom
+    from %I.%I
+    where %I is not null
+      and %s is not null
+  $q$, ti_code_expr, ti_name_expr, ti_geom, ti_schema, ti_table, ti_geom, ti_code_expr);
+
+  execute 'create index if not exists ix_ref_core_ti_geom on ref_core.ti using gist(geom)';
+  execute 'create index if not exists ix_ref_core_ti_cd on ref_core.ti(ti_cod)';
+
+  select column_name into bioma_geom
+  from information_schema.columns
+  where table_schema = bioma_schema and table_name = bioma_table and udt_name = 'geometry'
+  order by ordinal_position
+  limit 1;
+
+  if bioma_geom is null then
+    raise exception 'no geometry column in %.%', bioma_schema, bioma_table;
+  end if;
+
+  bioma_code_expr := '';
+  foreach col in array bioma_code_candidates loop
+    if exists (
+      select 1 from information_schema.columns
+      where table_schema = bioma_schema and table_name = bioma_table and column_name = col
+    ) then
+      if bioma_code_expr = '' then
+        bioma_code_expr := format('nullif(trim(%I::text),'''')', col);
+      else
+        bioma_code_expr := bioma_code_expr || format(', nullif(trim(%I::text),'''')', col);
+      end if;
+    end if;
+  end loop;
+
+  if bioma_code_expr = '' then
+    raise exception 'no bioma code column in %.%', bioma_schema, bioma_table;
+  end if;
+  bioma_code_expr := 'coalesce(' || bioma_code_expr || ')';
+
+  bioma_name_expr := '';
+  foreach col in array bioma_name_candidates loop
+    if exists (
+      select 1 from information_schema.columns
+      where table_schema = bioma_schema and table_name = bioma_table and column_name = col
+    ) then
+      if bioma_name_expr = '' then
+        bioma_name_expr := format('nullif(trim(%I::text),'''')', col);
+      else
+        bioma_name_expr := bioma_name_expr || format(', nullif(trim(%I::text),'''')', col);
+      end if;
+    end if;
+  end loop;
+
+  if bioma_name_expr = '' then
+    bioma_name_expr := bioma_code_expr;
+  else
+    bioma_name_expr := 'coalesce(' || bioma_name_expr || ')';
+  end if;
+
+  execute 'drop table if exists ref_core.bioma cascade';
+  execute format($q$
+    create table ref_core.bioma as
+    select
+      %s as cd_bioma,
+      %s as bioma,
+      st_multi(st_collectionextract(st_makevalid(st_transform(%I, 4326)), 3))::geometry(MultiPolygon,4326) as geom
+    from %I.%I
+    where %I is not null
+  $q$, bioma_code_expr, bioma_name_expr, bioma_geom, bioma_schema, bioma_table, bioma_geom);
+
+  execute 'create index if not exists ix_ref_core_bioma_geom on ref_core.bioma using gist(geom)';
+  execute 'create index if not exists ix_ref_core_bioma_cd on ref_core.bioma(cd_bioma)';
 end $$;
 
 -- sanity checks
@@ -298,3 +270,4 @@ union all
 select 'ti', count(*), min(st_srid(geom)), max(st_srid(geom)) from ref_core.ti
 union all
 select 'bioma', count(*), min(st_srid(geom)), max(st_srid(geom)) from ref_core.bioma;
+
