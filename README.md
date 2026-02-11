@@ -28,3 +28,10 @@ powershell -ExecutionPolicy Bypass -File scripts\smoke.ps1 -BaseUrl "http://127.
 - Para 1 dia: `from=D` e `to=D+1`.
 
 Runbook operacional: `docs/runbook.md`.
+
+## Agendamento diario local (Task Scheduler)
+- Programa: `powershell.exe`
+- Argumentos:
+```powershell
+-ExecutionPolicy Bypass -File "C:\Users\rafae\dev\github\inpe-queimadas-etl\scripts\run_daily.ps1"
+```
