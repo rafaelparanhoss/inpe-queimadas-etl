@@ -49,7 +49,7 @@ jobs:
             date_str="${{ github.event.inputs.date }}"
             source="input"
           else
-            date_str="$(TZ=America/Sao_Paulo date +%F)"
+            date_str="$(TZ=America/Sao_Paulo date -d 'yesterday' +%F)"
             source="tz"
           fi
 
@@ -89,16 +89,11 @@ jobs:
       - name: run pipeline
         run: |
           date_str="${{ steps.run_date.outputs.date }}"
-          if [ "${{ steps.run_date.outputs.source }}" = "input" ]; then
-            uv run python -m etl.app run --date "$date_str" --checks
-          else
-            uv run python -m etl.app today --date "$date_str"
-          fi
+          uv run python -m etl.app run --date "$date_str" --checks --engine direct
 
-      - name: run report
+      - name: validate marts dry-run
         run: |
-          date_str="${{ steps.run_date.outputs.date }}"
-          uv run python -m etl.app report --date "$date_str"
+          uv run python -m etl.validate_marts --apply-minimal --dry-run --engine direct
 
       - name: upload artifacts
         uses: actions/upload-artifact@v4
