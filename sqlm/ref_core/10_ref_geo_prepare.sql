@@ -1,6 +1,19 @@
 -- 10_ref_geo_prepare.sql
 create schema if not exists ref_core;
 
+-- seed ref_core com municipios do schema ref em ambiente limpo (CI)
+insert into ref_core.ibge_municipios (cd_mun, nm_mun, uf, area_km2, geom)
+select
+  r.cd_mun,
+  r.nm_mun,
+  r.uf,
+  r.area_km2,
+  r.geom
+from ref.ibge_municipios r
+where r.geom is not null
+  and not exists (select 1 from ref_core.ibge_municipios)
+on conflict (cd_mun) do nothing;
+
 -- 1) indices basicos (municipios)
 create index if not exists idx_ref_core_ibge_municipios_geom
   on ref_core.ibge_municipios using gist (geom);
