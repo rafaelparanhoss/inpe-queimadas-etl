@@ -67,11 +67,24 @@ create index if not exists idx_ref_ibge_ufs_web_uf
 analyze ref.ibge_ufs_web;
 
 -- 4) quick overlay indexes (optional)
-create index if not exists idx_ref_biomas_4326_geom
-  on ref.biomas_4326 using gist (geom);
+do $$
+begin
+  if to_regclass('ref.biomas_4326') is not null then
+    execute 'create index if not exists idx_ref_biomas_4326_geom on ref.biomas_4326 using gist (geom)';
+  else
+    raise notice 'skip optional index: ref.biomas_4326 not found';
+  end if;
 
-create index if not exists idx_ref_cnuc_uc_geom
-  on ref.cnuc_uc using gist (geom);
+  if to_regclass('ref.cnuc_uc') is not null then
+    execute 'create index if not exists idx_ref_cnuc_uc_geom on ref.cnuc_uc using gist (geom)';
+  else
+    raise notice 'skip optional index: ref.cnuc_uc not found';
+  end if;
 
-create index if not exists idx_ref_tis_4326_geom
-  on ref.tis_4326 using gist (geom);
+  if to_regclass('ref.tis_4326') is not null then
+    execute 'create index if not exists idx_ref_tis_4326_geom on ref.tis_4326 using gist (geom)';
+  else
+    raise notice 'skip optional index: ref.tis_4326 not found';
+  end if;
+end
+$$;
