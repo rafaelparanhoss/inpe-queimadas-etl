@@ -35,3 +35,25 @@ Runbook operacional: `docs/runbook.md`.
 ```powershell
 -ExecutionPolicy Bypass -File "C:\Users\rafae\dev\github\inpe-queimadas-etl\scripts\run_daily.ps1"
 ```
+
+## Deploy da API no Render (Blueprint)
+
+1. Suba este repo no GitHub.
+2. No Render: `New` -> `Blueprint`.
+3. Selecione o repo e confira o service com:
+   - `rootDir: api`
+   - `buildCommand: pip install -r requirements.txt`
+   - `startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+4. No painel do service, configure as env vars minimas:
+   - `DB_HOST`
+   - `DB_PORT`
+   - `DB_NAME`
+   - `DB_USER`
+   - `DB_PASSWORD`
+   - `DB_SSLMODE` (`prefer` ou `require`)
+   - `CORS_ORIGINS`
+5. Deploy e teste:
+   - `/health`
+   - `/api/summary?from=2025-08-01&to=2025-09-01`
+
+`api/.env` e `web/.env.local` sao locais; nunca comitar segredos.
