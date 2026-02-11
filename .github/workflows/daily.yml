@@ -13,11 +13,30 @@ on:
 jobs:
   run:
     runs-on: ubuntu-latest
+    services:
+      postgis:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_DB: geoetl
+          POSTGRES_USER: geoetl
+          POSTGRES_PASSWORD: geoetl
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U geoetl -d geoetl"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 20
     defaults:
       run:
         working-directory: ${{ github.workspace }}
     env:
       TZ: America/Sao_Paulo
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      DB_NAME: geoetl
+      DB_USER: geoetl
+      DB_PASSWORD: geoetl
     steps:
       - uses: actions/checkout@v4
 
@@ -38,6 +57,42 @@ jobs:
         run: |
           uv sync
           uv pip install -e .
+
+      - name: wait for database
+        run: |
+          uv run python - <<'PY'
+          import os
+          import time
+          import psycopg
+
+          host = os.environ["DB_HOST"]
+          port = os.environ["DB_PORT"]
+          dbname = os.environ["DB_NAME"]
+          user = os.environ["DB_USER"]
+          password = os.environ["DB_PASSWORD"]
+
+          err = None
+          for _ in range(60):
+              try:
+                  conn = psycopg.connect(
+                      host=host,
+                      port=port,
+                      dbname=dbname,
+                      user=user,
+                      password=password,
+                      connect_timeout=3,
+                  )
+                  with conn, conn.cursor() as cur:
+                      cur.execute("select 1")
+                      cur.fetchone()
+                  print("database ready")
+                  raise SystemExit(0)
+              except Exception as exc:
+                  err = exc
+                  time.sleep(2)
+
+          raise SystemExit(f"database not ready after wait: {err}")
+          PY
 
       - name: resolve date
         id: run_date
