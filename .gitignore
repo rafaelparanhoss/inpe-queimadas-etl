@@ -5,9 +5,12 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.DS_Store
 .env
 .env.local
 data/
+data/logs/
+data/reports/
 *.egg-info/
 *.log
 .coverage
@@ -16,6 +19,8 @@ htmlcov/
 audit/
 logs/*
 !logs/.gitkeep
+docs/validation_last_run.md
+_local_backup/
 sqlm/marts/aux/
 web/node_modules/
 web/dist/
