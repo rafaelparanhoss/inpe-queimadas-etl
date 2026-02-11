@@ -13,30 +13,17 @@ on:
 jobs:
   run:
     runs-on: ubuntu-latest
-    services:
-      postgis:
-        image: postgis/postgis:16-3.4
-        env:
-          POSTGRES_DB: geoetl
-          POSTGRES_USER: geoetl
-          POSTGRES_PASSWORD: geoetl
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U geoetl -d geoetl"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 20
     defaults:
       run:
         working-directory: ${{ github.workspace }}
     env:
       TZ: America/Sao_Paulo
-      DB_HOST: 127.0.0.1
-      DB_PORT: "5432"
-      DB_NAME: geoetl
-      DB_USER: geoetl
-      DB_PASSWORD: geoetl
+      DB_HOST: ${{ secrets.DB_HOST }}
+      DB_PORT: ${{ secrets.DB_PORT }}
+      DB_NAME: ${{ secrets.DB_NAME }}
+      DB_USER: ${{ secrets.DB_USER }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      DB_SSLMODE: ${{ secrets.DB_SSLMODE }}
     steps:
       - uses: actions/checkout@v4
 
@@ -58,55 +45,33 @@ jobs:
           uv sync
           uv pip install -e .
 
-      - name: wait for database
+      - name: assert secrets
         run: |
-          uv run python - <<'PY'
-          import os
-          import time
-          import psycopg
+          set -euo pipefail
+          missing=0
+          for var in DB_HOST DB_NAME DB_USER DB_PASSWORD; do
+            if [ -z "${!var:-}" ]; then
+              echo "::error::missing required GitHub secret: $var"
+              missing=1
+            fi
+          done
 
-          host = os.environ["DB_HOST"]
-          port = os.environ["DB_PORT"]
-          dbname = os.environ["DB_NAME"]
-          user = os.environ["DB_USER"]
-          password = os.environ["DB_PASSWORD"]
-
-          err = None
-          for _ in range(60):
-              try:
-                  conn = psycopg.connect(
-                      host=host,
-                      port=port,
-                      dbname=dbname,
-                      user=user,
-                      password=password,
-                      connect_timeout=3,
-                  )
-                  with conn, conn.cursor() as cur:
-                      cur.execute("select 1")
-                      cur.fetchone()
-                  print("database ready")
-                  raise SystemExit(0)
-              except Exception as exc:
-                  err = exc
-                  time.sleep(2)
-
-          raise SystemExit(f"database not ready after wait: {err}")
-          PY
-
-      - name: resolve db container id
-        run: |
-          db_container="$(docker ps --filter "ancestor=postgis/postgis:16-3.4" --format '{{.ID}}' | head -n1)"
-          if [ -z "$db_container" ]; then
-            echo "postgis container not found" >&2
-            docker ps -a
+          if [ "$missing" -ne 0 ]; then
             exit 1
           fi
-          echo "DB_CONTAINER=$db_container" >> "$GITHUB_ENV"
+
+          if [ -z "${DB_PORT:-}" ]; then
+            echo "DB_PORT=5432" >> "$GITHUB_ENV"
+          fi
+
+          if [ -z "${DB_SSLMODE:-}" ]; then
+            echo "DB_SSLMODE=prefer" >> "$GITHUB_ENV"
+          fi
 
       - name: resolve date
         id: run_date
         run: |
+          set -euo pipefail
           if [ -n "${{ github.event.inputs.date }}" ]; then
             date_str="${{ github.event.inputs.date }}"
             source="input"
@@ -123,14 +88,95 @@ jobs:
           echo "date=$date_str" >> "$GITHUB_OUTPUT"
           echo "source=$source" >> "$GITHUB_OUTPUT"
 
+      - name: test persistent database connection
+        run: |
+          uv run python - <<'PY'
+          import os
+          import time
+          import psycopg
+
+          host = os.environ["DB_HOST"]
+          port = os.getenv("DB_PORT", "5432")
+          dbname = os.environ["DB_NAME"]
+          user = os.environ["DB_USER"]
+          password = os.environ["DB_PASSWORD"]
+          sslmode = os.getenv("DB_SSLMODE", "prefer")
+
+          err = None
+          for _ in range(10):
+            try:
+              with psycopg.connect(
+                host=host,
+                port=port,
+                dbname=dbname,
+                user=user,
+                password=password,
+                sslmode=sslmode,
+                connect_timeout=5,
+              ) as conn:
+                with conn.cursor() as cur:
+                  cur.execute("select 1")
+                  cur.fetchone()
+              print(f"db connection ok | host={host} port={port} db={dbname} user={user} sslmode={sslmode}")
+              raise SystemExit(0)
+            except Exception as exc:
+              err = exc
+              time.sleep(3)
+
+          raise SystemExit(f"db connection failed | host={host} port={port} db={dbname} user={user}: {err}")
+          PY
+
       - name: run pipeline
         run: |
           date_str="${{ steps.run_date.outputs.date }}"
-          uv run python -m etl.app run --date "$date_str" --checks --engine docker
+          uv run python -m etl.app run --date "$date_str" --checks --engine direct
 
       - name: validate marts dry-run
         run: |
           uv run python -m etl.validate_marts --apply-minimal --dry-run --engine direct
+
+      - name: summarize run
+        env:
+          RUN_DATE: ${{ steps.run_date.outputs.date }}
+        run: |
+          uv run python - <<'PY'
+          import os
+          import psycopg
+
+          run_date = os.environ["RUN_DATE"]
+          host = os.environ["DB_HOST"]
+          port = os.getenv("DB_PORT", "5432")
+          dbname = os.environ["DB_NAME"]
+          user = os.environ["DB_USER"]
+          password = os.environ["DB_PASSWORD"]
+          sslmode = os.getenv("DB_SSLMODE", "prefer")
+
+          count = None
+          with psycopg.connect(
+            host=host,
+            port=port,
+            dbname=dbname,
+            user=user,
+            password=password,
+            sslmode=sslmode,
+            connect_timeout=5,
+          ) as conn:
+            with conn.cursor() as cur:
+              cur.execute(
+                "select count(*) from marts.mv_focos_day_dim where day = %s::date",
+                (run_date,),
+              )
+              row = cur.fetchone()
+              count = int(row[0] if row else 0)
+
+          summary = os.getenv("GITHUB_STEP_SUMMARY")
+          if summary:
+            with open(summary, "a", encoding="utf-8") as fh:
+              fh.write("## Daily ETL Summary\n")
+              fh.write(f"- Date processed: `{run_date}`\n")
+              fh.write(f"- Rows in `marts.mv_focos_day_dim` for date: `{count}`\n")
+          print(f"summary | date={run_date} | mv_focos_day_dim_rows={count}")
+          PY
 
       - name: upload artifacts
         uses: actions/upload-artifact@v4
