@@ -47,6 +47,16 @@ Guia de wiring: `docs/superset_setup.md`
 Inventario SQL: `docs/inventory_superset_sql.md`
 Relatorio de validacao: `docs/validation_last_run.md`
 
+## Documentacao minima mantida
+- `README.md` (runbook principal)
+- `docs/scatter.md` (semantica e UX do scatter)
+- `docs/geo_sources_report.md` (auditoria das fontes geo)
+- `docs/sql/geo_sources_apply.sql` (views geo base)
+- `docs/sql/geo_sources_apply_fix_ti_uc.sql` (ajustes canonicos TI/UC)
+- `docs/superset_setup.md` (wiring de datasets)
+- `docs/inventory_superset_sql.md` (inventario SQL do portfolio)
+- `docs/validation_last_run.md` (resultado da ultima validacao)
+
 ## Windows hardening (git)
 ```powershell
 git config --global core.longpaths true
