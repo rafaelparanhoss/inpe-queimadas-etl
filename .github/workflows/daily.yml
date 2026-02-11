@@ -18,9 +18,6 @@ jobs:
         working-directory: ${{ github.workspace }}
     env:
       TZ: America/Sao_Paulo
-      DB_CONTAINER: geoetl_postgis
-      DB_USER: geoetl
-      DB_NAME: geoetl
     steps:
       - uses: actions/checkout@v4
 
@@ -61,31 +58,6 @@ jobs:
           echo "date=$date_str" >> "$GITHUB_OUTPUT"
           echo "source=$source" >> "$GITHUB_OUTPUT"
 
-      - name: start db
-        run: |
-          set -e
-          if docker compose up -d --wait --wait-timeout 120; then
-            exit 0
-          fi
-
-          echo "docker compose --wait unavailable, fallback to manual wait"
-          docker compose up -d
-
-          for i in $(seq 1 60); do
-            status="$(docker inspect -f '{{.State.Health.Status}}' "$DB_CONTAINER" 2>/dev/null || true)"
-            if [ "$status" = "healthy" ]; then
-              exit 0
-            fi
-            if docker exec "$DB_CONTAINER" pg_isready -U "$DB_USER" -d "$DB_NAME"; then
-              exit 0
-            fi
-            sleep 2
-          done
-
-          docker compose ps
-          docker logs "$DB_CONTAINER"
-          exit 1
-
       - name: run pipeline
         run: |
           date_str="${{ steps.run_date.outputs.date }}"
@@ -103,4 +75,5 @@ jobs:
           path: |
             data/logs/**
             data/reports/**
+            docs/validation_last_run.md
           if-no-files-found: warn
