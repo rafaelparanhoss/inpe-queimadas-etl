@@ -8,9 +8,9 @@
   --accent: #4f8cff;
   --accent-2: #38bdf8;
   --warn: #f59e0b;
-  --sidebar-w: clamp(540px, 38vw, 720px);
-  --sidebar-min: 520px;
-  --sidebar-max: 760px;
+  --sidebar-w: clamp(450px, 31vw, 600px);
+  --sidebar-min: 430px;
+  --sidebar-max: 620px;
   --sidebar-pad: 16px;
   --panel-font: 15px;
 }

@@ -41,7 +41,7 @@ class SearchResponse(BaseModel):
 
 
 class OptionsResponse(BaseModel):
-    entity: Literal["uf", "bioma", "uc", "ti"]
+    entity: Literal["uf", "mun", "bioma", "uc", "ti"]
     items: list[SearchItem]
 
 

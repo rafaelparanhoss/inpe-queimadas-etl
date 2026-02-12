@@ -78,12 +78,13 @@ export const api = {
       signal,
     ),
 
-  options: (entity, limit, signal) =>
+  options: (entity, limit, uf, signal) =>
     fetchJson(
       '/api/options',
       {
         entity,
         limit,
+        uf,
       },
       signal,
     ),

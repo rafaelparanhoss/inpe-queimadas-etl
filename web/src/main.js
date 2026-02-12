@@ -104,7 +104,7 @@ let latestSummary = null
 let rangeAdjustNotice = null
 
 const FILTER_LABEL_KEYS = ['uf', 'bioma', 'mun', 'uc', 'ti']
-const FILTER_SEARCH_LIMIT = 50
+const FILTER_OPTIONS_LIMIT = 500
 const filterLabels = {
   uf: null,
   bioma: null,
@@ -193,13 +193,8 @@ function startFilterSearchCycle(entity) {
 
 async function fetchOptions(entity, limit = 500) {
   const ctrl = startFilterSearchCycle(entity)
-  const payload = await api.options(entity, limit, ctrl.signal)
-  return payload?.items || []
-}
-
-async function fetchSearch(entity, q, uf = null, limit = FILTER_SEARCH_LIMIT) {
-  const ctrl = startFilterSearchCycle(entity)
-  const payload = await api.search(entity, q, uf, limit, ctrl.signal)
+  const uf = entity === 'uf' ? null : state.uf
+  const payload = await api.options(entity, limit, uf, ctrl.signal)
   return payload?.items || []
 }
 
@@ -336,51 +331,72 @@ function normalizeTopItems(items, group) {
   })
 }
 
-async function refreshSearchOptions(entity, query = '') {
-  const q = String(query || '').trim()
-  const hasQ = Boolean(q)
-  try {
-    if (entity === 'mun') {
-      if (!state.uf) {
-        filterOptionCache.mun = []
-        ui.setFilterOptions('mun', [])
-        return
-      }
-      const munItems = await fetchSearch('mun', q, state.uf, FILTER_SEARCH_LIMIT)
-      filterOptionCache.mun = munItems
-      ui.setFilterOptions('mun', munItems)
-      return
-    }
-
-    if (!hasQ && filterOptionCache[entity]?.length) {
-      ui.setFilterOptions(entity, filterOptionCache[entity])
-      return
-    }
-
-    const items = await fetchSearch(entity, q, null, FILTER_SEARCH_LIMIT)
-    if (!hasQ) {
-      filterOptionCache[entity] = items
-    }
-    ui.setFilterOptions(entity, items)
-  } catch (err) {
-    if (err?.name === 'AbortError') return
-    ui.setStatus(`Busca de ${entity.toUpperCase()} indisponivel: ${String(err?.message || err)}`)
-  }
+function ensureFilterExistsInOptions(entity) {
+  const value = state[entity]
+  if (!value) return false
+  const options = filterOptionCache[entity] || []
+  const exists = options.some((item) => String(item.key) === String(value))
+  if (exists) return false
+  setFilters({ [entity]: null })
+  clearFilterLabel(entity)
+  return true
 }
 
-async function preloadFilterOptions() {
-  const entities = ['uf', 'bioma', 'uc', 'ti']
+async function refreshOptionsForCurrentUf() {
+  const uf = state.uf ? String(state.uf).toUpperCase() : null
+  const entities = ['bioma', 'uc', 'ti']
+  if (uf) entities.push('mun')
+  let hasAnyError = false
+
   await Promise.all(
     entities.map(async (entity) => {
       try {
-        const items = await fetchOptions(entity, 500)
+        const items = await fetchOptions(entity, FILTER_OPTIONS_LIMIT)
         filterOptionCache[entity] = items
         ui.setFilterOptions(entity, items)
       } catch (err) {
+        hasAnyError = true
+        if (err?.name === 'AbortError') return
         ui.setStatus(`Falha ao carregar opcoes de ${entity.toUpperCase()}: ${String(err?.message || err)}`)
       }
     }),
   )
+
+  if (!uf) {
+    filterOptionCache.mun = []
+    ui.setFilterOptions('mun', [])
+  }
+
+  let filtersChanged = false
+  for (const entity of ['mun', 'bioma', 'uc', 'ti']) {
+    if (ensureFilterExistsInOptions(entity)) {
+      filtersChanged = true
+    }
+  }
+
+  if (filtersChanged) {
+    if (!state.uc && !state.ti) {
+      pendingOverlayFocus = null
+      mapCtl.clearSelectionOverlay()
+    }
+    setFilterUi()
+    refreshAllDebounced()
+  } else if (!hasAnyError) {
+    setFilterUi()
+  }
+}
+
+async function preloadFilterOptions() {
+  try {
+    const ufItems = await fetchOptions('uf', FILTER_OPTIONS_LIMIT)
+    filterOptionCache.uf = ufItems
+    ui.setFilterOptions('uf', ufItems)
+  } catch (err) {
+    if (err?.name !== 'AbortError') {
+      ui.setStatus(`Falha ao carregar opcoes de UF: ${String(err?.message || err)}`)
+    }
+  }
+  await refreshOptionsForCurrentUf()
 }
 
 function applySelectFilter(filterKey, value, label) {
@@ -404,6 +420,7 @@ function applySelectFilter(filterKey, value, label) {
       clearFilterLabel('uf')
       clearFilterLabel('mun')
       setMunLayerEnabled(false)
+      void refreshOptionsForCurrentUf()
       setFilterUi()
       mapCtl.fitBrazil()
       refreshAllDebounced()
@@ -415,8 +432,7 @@ function applySelectFilter(filterKey, value, label) {
     if (changedUf) {
       clearFilterLabel('mun')
       ui.setFilterSelect('mun', null)
-      ui.setFilterSearchValue('mun', '')
-      void refreshSearchOptions('mun', '')
+      void refreshOptionsForCurrentUf()
     }
     setMunLayerEnabled(true)
     setFilterUi()
@@ -746,11 +762,6 @@ function clearFilters() {
   for (const key of FILTER_LABEL_KEYS) {
     clearFilterLabel(key)
   }
-  ui.setFilterSearchValue('uf', '')
-  ui.setFilterSearchValue('mun', '')
-  ui.setFilterSearchValue('bioma', '')
-  ui.setFilterSearchValue('uc', '')
-  ui.setFilterSearchValue('ti', '')
   if (pointsAbort) {
     pointsAbort.abort()
     pointsAbort = null
@@ -770,6 +781,7 @@ function clearFilters() {
   ui.setPointsBadge(null)
   ui.setPointsMeta(null)
   setFilterUi()
+  void refreshOptionsForCurrentUf()
   mapCtl.fitBrazil()
   void refreshAll()
 }
@@ -816,16 +828,6 @@ ui.onFilterSelect('uc', (value, label) => {
 ui.onFilterSelect('ti', (value, label) => {
   applySelectFilter('ti', value, label)
 })
-const onSearchUf = debounce((q) => { void refreshSearchOptions('uf', q) }, 300)
-const onSearchMun = debounce((q) => { void refreshSearchOptions('mun', q) }, 300)
-const onSearchBioma = debounce((q) => { void refreshSearchOptions('bioma', q) }, 300)
-const onSearchUc = debounce((q) => { void refreshSearchOptions('uc', q) }, 300)
-const onSearchTi = debounce((q) => { void refreshSearchOptions('ti', q) }, 300)
-ui.onFilterSearch('uf', onSearchUf)
-ui.onFilterSearch('mun', onSearchMun)
-ui.onFilterSearch('bioma', onSearchBioma)
-ui.onFilterSearch('uc', onSearchUc)
-ui.onFilterSearch('ti', onSearchTi)
 ui.onMunLayerToggle((checked) => {
   if (!state.uf) {
     setMunLayerEnabled(false)
@@ -890,7 +892,7 @@ ui.onChipRemove((filterKey) => {
     setMunLayerEnabled(false)
     ui.setFilterSelect('mun', null)
     ui.setFilterOptions('mun', [])
-    ui.setFilterSearchValue('mun', '')
+    void refreshOptionsForCurrentUf()
     mapCtl.fitBrazil()
   }
   if (filterKey === 'uc' || filterKey === 'ti') {
@@ -917,8 +919,6 @@ ui.onTopTablePick((filterKey, value, label) => {
   setFilterUi()
 }
 
-void preloadFilterOptions().then(() => {
-  void refreshSearchOptions('mun', '')
-})
+void preloadFilterOptions()
 
 void refreshAll()

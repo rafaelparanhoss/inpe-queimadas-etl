@@ -58,7 +58,7 @@ points_cache = TTLCache(maxsize=1024, ttl=int(os.getenv("POINTS_CACHE_TTL_SECOND
 
 TopGroup = Literal["uf", "bioma", "mun", "uc", "ti"]
 SearchEntity = Literal["uf", "mun", "bioma", "uc", "ti"]
-OptionEntity = Literal["uf", "bioma", "uc", "ti"]
+OptionEntity = Literal["uf", "mun", "bioma", "uc", "ti"]
 BoundsEntity = Literal["uf", "mun", "bioma", "uc", "ti"]
 GeoEntity = Literal["uc", "ti"]
 TOP_GROUP_EXPR: dict[str, tuple[str, str]] = {
@@ -199,9 +199,9 @@ def _query_search_items(
         "limit": int(limit),
     }
 
-    if entity == "mun":
-        if not uf:
-            raise HTTPException(status_code=400, detail="uf is required for entity=mun")
+    if entity == "mun" and not uf:
+        raise HTTPException(status_code=400, detail="uf is required for entity=mun")
+    if uf:
         uf_filter = "and upper(uf)::text = %(uf)s::text"
         params["uf"] = uf
 
@@ -1364,9 +1364,13 @@ def search(
 def options(
     request: Request,
     entity: OptionEntity = Query(...),
+    uf: Optional[str] = Query(default=None),
     limit: int = Query(default=500, ge=1, le=500),
 ):
     t0 = now_ms()
+    uf_norm = _norm_text(uf, upper=True)
+    if entity == "mun" and not uf_norm:
+        raise HTTPException(status_code=400, detail="uf is required for entity=mun")
     key = _cache_key(request)
 
     def run():
@@ -1374,7 +1378,7 @@ def options(
             entity=entity,
             q_value="",
             limit=limit,
-            uf=None,
+            uf=uf_norm,
         )
         return {
             "entity": entity,
@@ -1385,7 +1389,7 @@ def options(
         "options",
         key,
         run,
-        {"entity": entity, "limit": limit, "ms": now_ms() - t0},
+        {"entity": entity, "uf": uf_norm, "limit": limit, "ms": now_ms() - t0},
     )
     return out
 

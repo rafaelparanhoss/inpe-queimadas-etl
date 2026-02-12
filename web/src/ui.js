@@ -39,15 +39,10 @@ export function toTitleCasePt(text) {
 export function initUi() {
   const elFrom = document.getElementById('from')
   const elTo = document.getElementById('to')
-  const elUfSearch = document.getElementById('ufSearch')
   const elUfSelect = document.getElementById('ufSelect')
-  const elMunSearch = document.getElementById('munSearch')
   const elMunSelect = document.getElementById('munSelect')
-  const elBiomaSearch = document.getElementById('biomaSearch')
   const elBiomaSelect = document.getElementById('biomaSelect')
-  const elUcSearch = document.getElementById('ucSearch')
   const elUcSelect = document.getElementById('ucSelect')
-  const elTiSearch = document.getElementById('tiSearch')
   const elTiSelect = document.getElementById('tiSelect')
   const elApply = document.getElementById('apply')
   const elClear = document.getElementById('clear')
@@ -83,14 +78,6 @@ export function initUi() {
     mun: 'Todos',
     uc: 'Todas',
     ti: 'Todas',
-  }
-
-  const filterSearchInputs = {
-    uf: elUfSearch,
-    bioma: elBiomaSearch,
-    mun: elMunSearch,
-    uc: elUcSearch,
-    ti: elTiSearch,
   }
 
   const filterSelects = {
@@ -160,11 +147,6 @@ export function initUi() {
         fn(selected?.key || null, selected?.label || null)
       })
     },
-    onFilterSearch: (entity, fn) => {
-      const input = filterSearchInputs[entity]
-      if (!input) return
-      input.addEventListener('input', () => fn(input.value || ''))
-    },
     setFilterOptions,
     setFilterSelect: (entity, key) => {
       const select = filterSelects[entity]
@@ -176,16 +158,9 @@ export function initUi() {
         select.value = ''
       }
     },
-    setFilterSearchValue: (entity, value) => {
-      const input = filterSearchInputs[entity]
-      if (!input) return
-      input.value = value || ''
-    },
     setFilterDisabled: (entity, disabled) => {
       const select = filterSelects[entity]
-      const input = filterSearchInputs[entity]
       if (select) select.disabled = Boolean(disabled)
-      if (input) input.disabled = Boolean(disabled)
     },
     setUfSelect: (uf) => {
       const next = uf ? String(uf).toUpperCase() : ''
