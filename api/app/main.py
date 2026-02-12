@@ -24,7 +24,9 @@ from .schemas import (
     GeoOverlayResponse,
     GeoOverlayQaResponse,
     MunicipalityLookupResponse,
+    OptionsResponse,
     PointsResponse,
+    SearchResponse,
     SummaryResponse,
     TimeseriesResponse,
     TopResponse,
@@ -55,6 +57,8 @@ cache = make_ttl_cache()
 points_cache = TTLCache(maxsize=1024, ttl=int(os.getenv("POINTS_CACHE_TTL_SECONDS", "30")))
 
 TopGroup = Literal["uf", "bioma", "mun", "uc", "ti"]
+SearchEntity = Literal["uf", "mun", "bioma", "uc", "ti"]
+OptionEntity = Literal["uf", "bioma", "uc", "ti"]
 BoundsEntity = Literal["uf", "mun", "bioma", "uc", "ti"]
 GeoEntity = Literal["uc", "ti"]
 TOP_GROUP_EXPR: dict[str, tuple[str, str]] = {
@@ -63,6 +67,13 @@ TOP_GROUP_EXPR: dict[str, tuple[str, str]] = {
     "mun": ("coalesce(cd_mun::text, mun_nm_mun)", "coalesce(mun_nm_mun, cd_mun::text)"),
     "uc": ("coalesce(cd_cnuc::text, uc_nome)", "coalesce(uc_nome, cd_cnuc::text)"),
     "ti": ("coalesce(terrai_cod::text, ti_nome)", "coalesce(ti_nome, terrai_cod::text)"),
+}
+SEARCH_ENTITY_EXPR: dict[str, tuple[str, str, str | None]] = {
+    "uf": ("upper(uf)::text", "upper(uf)::text", None),
+    "bioma": ("coalesce(cd_bioma::text, upper(bioma))", "coalesce(bioma, cd_bioma::text)", None),
+    "mun": ("coalesce(cd_mun::text, mun_nm_mun)", "coalesce(mun_nm_mun, cd_mun::text)", "upper(uf)::text"),
+    "uc": ("coalesce(cd_cnuc::text, uc_nome)", "coalesce(uc_nome, cd_cnuc::text)", None),
+    "ti": ("coalesce(terrai_cod::text, ti_nome)", "coalesce(ti_nome, terrai_cod::text)", None),
 }
 
 CHORO_ZERO_COLOR = "#1a1b2f"
@@ -166,6 +177,109 @@ def _filters_payload(filters: dict[str, Optional[str]]) -> dict[str, Optional[st
         "uc": filters.get("uc"),
         "ti": filters.get("ti"),
     }
+
+
+def _query_search_items(
+    entity: SearchEntity,
+    q_value: str,
+    limit: int,
+    uf: Optional[str] = None,
+) -> list[dict[str, object]]:
+    if entity not in SEARCH_ENTITY_EXPR:
+        raise HTTPException(status_code=400, detail="invalid entity")
+
+    key_expr, label_expr, uf_expr = SEARCH_ENTITY_EXPR[entity]
+    uf_select = f", {uf_expr} as uf" if uf_expr else ""
+    uf_field = ", uf::text as uf" if uf_expr else ", null::text as uf"
+    uf_filter = ""
+    params: dict[str, object] = {
+        "q": q_value,
+        "q_like": f"%{q_value}%",
+        "q_prefix": f"{q_value}%",
+        "limit": int(limit),
+    }
+
+    if entity == "mun":
+        if not uf:
+            raise HTTPException(status_code=400, detail="uf is required for entity=mun")
+        uf_filter = "and upper(uf)::text = %(uf)s::text"
+        params["uf"] = uf
+
+    sql = f"""
+    with src as (
+      select distinct
+        {key_expr} as key,
+        {label_expr} as label
+        {uf_select}
+      from marts.mv_focos_day_dim
+      where {key_expr} is not null
+        and {key_expr} <> ''
+        and {label_expr} is not null
+        and {label_expr} <> ''
+        {uf_filter}
+    ),
+    filtered as (
+      select
+        key::text as key,
+        label::text as label
+        {uf_field}
+      from src
+      where (
+        %(q)s::text = ''
+        or key ilike %(q_like)s::text
+        or label ilike %(q_like)s::text
+      )
+    )
+    select
+      key,
+      label,
+      uf
+    from filtered
+    order by
+      case when %(q)s::text <> '' and label ilike %(q_prefix)s::text then 0 else 1 end,
+      label asc,
+      key asc
+    limit %(limit)s;
+    """
+
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+            rows = cur.fetchall()
+
+    geo_labels: dict[str, str] = {}
+    if entity in ("uc", "ti"):
+        keys = [str(r[0]) for r in rows if r and r[0] is not None]
+        geo_labels = _load_geo_labels(entity, keys)
+
+    items: list[dict[str, object]] = []
+    for row in rows:
+        key_val = str(row[0])
+        label_val = str(row[1] if row[1] is not None else key_val)
+        if entity in ("uc", "ti"):
+            label_val = geo_labels.get(key_val, label_val)
+        label_val = _clean_display_label(label_val)
+        item: dict[str, object] = {"key": key_val, "label": label_val}
+        uf_val = row[2] if len(row) > 2 else None
+        if uf_val:
+            item["uf"] = str(uf_val)
+        items.append(item)
+
+    if entity == "bioma":
+        dedup: dict[str, dict[str, object]] = {}
+        for item in items:
+            label_norm = str(item["label"]).strip().upper()
+            current = dedup.get(label_norm)
+            if current is None:
+                dedup[label_norm] = item
+                continue
+            cur_key = str(current.get("key", ""))
+            new_key = str(item.get("key", ""))
+            if (not cur_key.isdigit()) and new_key.isdigit():
+                dedup[label_norm] = item
+        items = sorted(dedup.values(), key=lambda x: (str(x["label"]), str(x["key"])))
+
+    return items
 
 
 def _build_fact_where(
@@ -1204,6 +1318,74 @@ def lookup_mun(
         cache_key,
         run,
         {"key": key_norm, "ms": now_ms() - t0},
+    )
+    return out
+
+
+@app.get("/api/search", response_model=SearchResponse)
+def search(
+    request: Request,
+    entity: SearchEntity = Query(...),
+    q: str = Query(default=""),
+    uf: Optional[str] = Query(default=None),
+    limit: int = Query(default=20, ge=1, le=100),
+):
+    t0 = now_ms()
+    q_norm = (q or "").strip()
+    uf_norm = _norm_text(uf, upper=True)
+    if entity == "mun" and not uf_norm:
+        raise HTTPException(status_code=400, detail="uf is required for entity=mun")
+
+    key = _cache_key(request)
+
+    def run():
+        items = _query_search_items(
+            entity=entity,
+            q_value=q_norm,
+            limit=limit,
+            uf=uf_norm,
+        )
+        return {
+            "entity": entity,
+            "q": q_norm,
+            "items": items,
+        }
+
+    out = _cached(
+        "search",
+        key,
+        run,
+        {"entity": entity, "q": q_norm, "uf": uf_norm, "limit": limit, "ms": now_ms() - t0},
+    )
+    return out
+
+
+@app.get("/api/options", response_model=OptionsResponse)
+def options(
+    request: Request,
+    entity: OptionEntity = Query(...),
+    limit: int = Query(default=500, ge=1, le=500),
+):
+    t0 = now_ms()
+    key = _cache_key(request)
+
+    def run():
+        items = _query_search_items(
+            entity=entity,
+            q_value="",
+            limit=limit,
+            uf=None,
+        )
+        return {
+            "entity": entity,
+            "items": items,
+        }
+
+    out = _cached(
+        "options",
+        key,
+        run,
+        {"entity": entity, "limit": limit, "ms": now_ms() - t0},
     )
     return out
 

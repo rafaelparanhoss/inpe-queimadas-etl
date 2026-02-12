@@ -28,6 +28,23 @@ class TopResponse(BaseModel):
     note: str | None = None
 
 
+class SearchItem(BaseModel):
+    key: str
+    label: str
+    uf: str | None = None
+
+
+class SearchResponse(BaseModel):
+    entity: Literal["uf", "mun", "bioma", "uc", "ti"]
+    q: str
+    items: list[SearchItem]
+
+
+class OptionsResponse(BaseModel):
+    entity: Literal["uf", "bioma", "uc", "ti"]
+    items: list[SearchItem]
+
+
 class TotalsResponse(BaseModel):
     n_focos: int
 
