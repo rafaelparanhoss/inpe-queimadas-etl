@@ -85,6 +85,8 @@ label {
 }
 
 input[type="date"],
+input[type="search"],
+input[type="text"],
 select {
   background: #0f1b31;
   color: var(--text);

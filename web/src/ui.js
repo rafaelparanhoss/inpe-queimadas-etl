@@ -39,7 +39,16 @@ export function toTitleCasePt(text) {
 export function initUi() {
   const elFrom = document.getElementById('from')
   const elTo = document.getElementById('to')
+  const elUfSearch = document.getElementById('ufSearch')
   const elUfSelect = document.getElementById('ufSelect')
+  const elMunSearch = document.getElementById('munSearch')
+  const elMunSelect = document.getElementById('munSelect')
+  const elBiomaSearch = document.getElementById('biomaSearch')
+  const elBiomaSelect = document.getElementById('biomaSelect')
+  const elUcSearch = document.getElementById('ucSearch')
+  const elUcSelect = document.getElementById('ucSelect')
+  const elTiSearch = document.getElementById('tiSearch')
+  const elTiSelect = document.getElementById('tiSelect')
   const elApply = document.getElementById('apply')
   const elClear = document.getElementById('clear')
   const elLast30 = document.getElementById('last30')
@@ -68,6 +77,74 @@ export function initUi() {
   const ucTableBody = document.getElementById('ucTableBody')
   const tiTableBody = document.getElementById('tiTableBody')
 
+  const FILTER_OPTION_LABEL = {
+    uf: 'Todas',
+    bioma: 'Todos',
+    mun: 'Todos',
+    uc: 'Todas',
+    ti: 'Todas',
+  }
+
+  const filterSearchInputs = {
+    uf: elUfSearch,
+    bioma: elBiomaSearch,
+    mun: elMunSearch,
+    uc: elUcSearch,
+    ti: elTiSearch,
+  }
+
+  const filterSelects = {
+    uf: elUfSelect,
+    bioma: elBiomaSelect,
+    mun: elMunSelect,
+    uc: elUcSelect,
+    ti: elTiSelect,
+  }
+
+  function renderFilterOptionLabel(entity, item) {
+    const raw = item?.label || item?.key || ''
+    if (entity === 'uf') return String(raw || item?.key || '').toUpperCase()
+    return toTitleCasePt(raw)
+  }
+
+  function setFilterOptions(entity, items) {
+    const select = filterSelects[entity]
+    if (!select) return
+    const currentValue = select.value || ''
+    select.innerHTML = ''
+    const empty = document.createElement('option')
+    empty.value = ''
+    empty.textContent = FILTER_OPTION_LABEL[entity] || 'Todos'
+    select.appendChild(empty)
+
+    for (const item of (items || [])) {
+      const key = String(item?.key || '').trim()
+      if (!key) continue
+      const option = document.createElement('option')
+      option.value = key
+      option.textContent = renderFilterOptionLabel(entity, item)
+      option.dataset.label = String(item?.label || item?.key || key)
+      select.appendChild(option)
+    }
+
+    if (currentValue && [...select.options].some((opt) => opt.value === currentValue)) {
+      select.value = currentValue
+    } else {
+      select.value = ''
+    }
+  }
+
+  function getSelectedFilterOption(entity) {
+    const select = filterSelects[entity]
+    if (!select) return null
+    const option = select.options[select.selectedIndex]
+    if (!option || !option.value) return null
+    return {
+      key: option.value,
+      label: option.dataset.label || option.textContent || option.value,
+    }
+  }
+
   return {
     getInputs: () => ({ from: elFrom.value, to: elTo.value }),
     setInputs: ({ from, to }) => {
@@ -75,9 +152,48 @@ export function initUi() {
       elTo.value = to
     },
     onUfSelect: (fn) => elUfSelect.addEventListener('change', () => fn(elUfSelect.value)),
+    onFilterSelect: (entity, fn) => {
+      const select = filterSelects[entity]
+      if (!select) return
+      select.addEventListener('change', () => {
+        const selected = getSelectedFilterOption(entity)
+        fn(selected?.key || null, selected?.label || null)
+      })
+    },
+    onFilterSearch: (entity, fn) => {
+      const input = filterSearchInputs[entity]
+      if (!input) return
+      input.addEventListener('input', () => fn(input.value || ''))
+    },
+    setFilterOptions,
+    setFilterSelect: (entity, key) => {
+      const select = filterSelects[entity]
+      if (!select) return
+      const next = key ? String(key) : ''
+      if ([...select.options].some((opt) => opt.value === next)) {
+        select.value = next
+      } else {
+        select.value = ''
+      }
+    },
+    setFilterSearchValue: (entity, value) => {
+      const input = filterSearchInputs[entity]
+      if (!input) return
+      input.value = value || ''
+    },
+    setFilterDisabled: (entity, disabled) => {
+      const select = filterSelects[entity]
+      const input = filterSearchInputs[entity]
+      if (select) select.disabled = Boolean(disabled)
+      if (input) input.disabled = Boolean(disabled)
+    },
     setUfSelect: (uf) => {
       const next = uf ? String(uf).toUpperCase() : ''
-      elUfSelect.value = next
+      if ([...elUfSelect.options].some((opt) => opt.value === next)) {
+        elUfSelect.value = next
+      } else {
+        elUfSelect.value = ''
+      }
     },
     onApply: (fn) => elApply.addEventListener('click', fn),
     onClear: (fn) => elClear.addEventListener('click', fn),
@@ -110,14 +226,19 @@ export function initUi() {
       ucTableBody.addEventListener('click', handler)
       tiTableBody.addEventListener('click', handler)
     },
-    setFilterLabels: (filters) => {
-      ufLabel.textContent = filters.uf ? String(filters.uf).toUpperCase() : FALLBACK_LABEL.uf
-      biomaLabel.textContent = filters.bioma ? toTitleCasePt(filters.bioma) : FALLBACK_LABEL.bioma
-      munLabel.textContent = filters.mun ? toTitleCasePt(filters.mun) : FALLBACK_LABEL.mun
-      ucLabel.textContent = filters.uc ? toTitleCasePt(filters.uc) : FALLBACK_LABEL.uc
-      tiLabel.textContent = filters.ti ? toTitleCasePt(filters.ti) : FALLBACK_LABEL.ti
+    setFilterLabels: (filters, labels = {}) => {
+      const ufDisplay = labels.uf || filters.uf || null
+      const biomaDisplay = labels.bioma || filters.bioma || null
+      const munDisplay = labels.mun || filters.mun || null
+      const ucDisplay = labels.uc || filters.uc || null
+      const tiDisplay = labels.ti || filters.ti || null
+      ufLabel.textContent = ufDisplay ? String(ufDisplay).toUpperCase() : FALLBACK_LABEL.uf
+      biomaLabel.textContent = biomaDisplay ? toTitleCasePt(biomaDisplay) : FALLBACK_LABEL.bioma
+      munLabel.textContent = munDisplay ? toTitleCasePt(munDisplay) : FALLBACK_LABEL.mun
+      ucLabel.textContent = ucDisplay ? toTitleCasePt(ucDisplay) : FALLBACK_LABEL.uc
+      tiLabel.textContent = tiDisplay ? toTitleCasePt(tiDisplay) : FALLBACK_LABEL.ti
     },
-    setActiveChips: (filters) => {
+    setActiveChips: (filters, labels = {}) => {
       chips.innerHTML = ''
       const entries = Object.entries(filters).filter(([, value]) => value)
       if (!entries.length) {
@@ -132,7 +253,8 @@ export function initUi() {
         chip.type = 'button'
         chip.className = 'chip'
         chip.dataset.chipKey = key
-        chip.textContent = `${toTitleCasePt(key)}: ${toTitleCasePt(value)} x`
+        const display = labels[key] || value
+        chip.textContent = `${toTitleCasePt(key)}: ${toTitleCasePt(display)} x`
         chips.appendChild(chip)
       }
     },

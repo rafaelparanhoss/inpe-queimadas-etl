@@ -65,4 +65,26 @@ export const api = {
       },
       signal,
     ),
+
+  search: (entity, q, uf, limit, signal) =>
+    fetchJson(
+      '/api/search',
+      {
+        entity,
+        q,
+        uf,
+        limit,
+      },
+      signal,
+    ),
+
+  options: (entity, limit, signal) =>
+    fetchJson(
+      '/api/options',
+      {
+        entity,
+        limit,
+      },
+      signal,
+    ),
 }

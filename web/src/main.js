@@ -103,6 +103,30 @@ let pointsAbort = null
 let latestSummary = null
 let rangeAdjustNotice = null
 
+const FILTER_LABEL_KEYS = ['uf', 'bioma', 'mun', 'uc', 'ti']
+const FILTER_SEARCH_LIMIT = 50
+const filterLabels = {
+  uf: null,
+  bioma: null,
+  mun: null,
+  uc: null,
+  ti: null,
+}
+const filterOptionCache = {
+  uf: [],
+  bioma: [],
+  mun: [],
+  uc: [],
+  ti: [],
+}
+const filterSearchAbort = {
+  uf: null,
+  bioma: null,
+  mun: null,
+  uc: null,
+  ti: null,
+}
+
 function startPointsRequestCycle() {
   if (pointsAbort) pointsAbort.abort()
   pointsAbort = new AbortController()
@@ -143,6 +167,42 @@ function resolvePointsDate(from, to, summary) {
   return { date: picked, source }
 }
 
+function setFilterLabel(filterKey, value, label) {
+  if (!FILTER_LABEL_KEYS.includes(filterKey)) return
+  if (!value) {
+    filterLabels[filterKey] = null
+    return
+  }
+  const raw = String(label || value).trim()
+  filterLabels[filterKey] = raw || String(value)
+}
+
+function clearFilterLabel(filterKey) {
+  if (!FILTER_LABEL_KEYS.includes(filterKey)) return
+  filterLabels[filterKey] = null
+}
+
+function startFilterSearchCycle(entity) {
+  if (filterSearchAbort[entity]) {
+    filterSearchAbort[entity].abort()
+  }
+  const ctrl = new AbortController()
+  filterSearchAbort[entity] = ctrl
+  return ctrl
+}
+
+async function fetchOptions(entity, limit = 500) {
+  const ctrl = startFilterSearchCycle(entity)
+  const payload = await api.options(entity, limit, ctrl.signal)
+  return payload?.items || []
+}
+
+async function fetchSearch(entity, q, uf = null, limit = FILTER_SEARCH_LIMIT) {
+  const ctrl = startFilterSearchCycle(entity)
+  const payload = await api.search(entity, q, uf, limit, ctrl.signal)
+  return payload?.items || []
+}
+
 function setFilterUi() {
   const filters = pickFilters()
   const ufSelected = Boolean(filters.uf)
@@ -151,9 +211,14 @@ function setFilterUi() {
   const singleDay = isSingleDayRange(state.from, state.to)
   const pointsMode = state.ui?.pointsDateMode || 'peak_day'
   const pointsCustom = state.ui?.pointsDateCustom || ''
-  ui.setUfSelect(filters.uf)
-  ui.setFilterLabels(filters)
-  ui.setActiveChips(filters)
+  ui.setFilterSelect('uf', filters.uf)
+  ui.setFilterSelect('mun', filters.mun)
+  ui.setFilterSelect('bioma', filters.bioma)
+  ui.setFilterSelect('uc', filters.uc)
+  ui.setFilterSelect('ti', filters.ti)
+  ui.setFilterDisabled('mun', !ufSelected)
+  ui.setFilterLabels(filters, filterLabels)
+  ui.setActiveChips(filters, filterLabels)
   ui.setMunLayerToggle({ enabled: ufSelected, checked: showMunLayer })
   ui.setPointsToggle({ checked: showPoints })
   ui.setPointsDateControls({
@@ -177,12 +242,13 @@ function setFilterUi() {
   }
 }
 
-async function applyMunicipalitySelection(munKey, { withBounds = true } = {}) {
+async function applyMunicipalitySelection(munKey, { withBounds = true, label = null } = {}) {
   const key = String(munKey || '').trim()
   if (!key) return
 
   if (state.uf && state.mun === key) {
     setFilters({ mun: null })
+    clearFilterLabel('mun')
     setFilterUi()
     if (withBounds && state.uf) {
       await fetchBoundsAndFit('uf', state.uf)
@@ -192,11 +258,15 @@ async function applyMunicipalitySelection(munKey, { withBounds = true } = {}) {
   }
 
   let derivedUf = state.uf ? String(state.uf).toUpperCase() : null
+  let derivedMunLabel = label ? String(label) : null
 
   try {
     const lookup = await api.lookupMun(key)
     if (lookup?.uf) {
       derivedUf = String(lookup.uf).toUpperCase()
+    }
+    if (lookup?.mun_nome) {
+      derivedMunLabel = String(lookup.mun_nome)
     }
   } catch {
     if (!derivedUf) {
@@ -211,6 +281,8 @@ async function applyMunicipalitySelection(munKey, { withBounds = true } = {}) {
   }
 
   setFilters({ uf: derivedUf, mun: key })
+  setFilterLabel('uf', derivedUf, derivedUf)
+  setFilterLabel('mun', key, derivedMunLabel || key)
   setMunLayerEnabled(true)
   setFilterUi()
 
@@ -264,9 +336,129 @@ function normalizeTopItems(items, group) {
   })
 }
 
-function toggleFilterAndRefresh(filterKey, value, { withBounds = true } = {}) {
+async function refreshSearchOptions(entity, query = '') {
+  const q = String(query || '').trim()
+  const hasQ = Boolean(q)
+  try {
+    if (entity === 'mun') {
+      if (!state.uf) {
+        filterOptionCache.mun = []
+        ui.setFilterOptions('mun', [])
+        return
+      }
+      const munItems = await fetchSearch('mun', q, state.uf, FILTER_SEARCH_LIMIT)
+      filterOptionCache.mun = munItems
+      ui.setFilterOptions('mun', munItems)
+      return
+    }
+
+    if (!hasQ && filterOptionCache[entity]?.length) {
+      ui.setFilterOptions(entity, filterOptionCache[entity])
+      return
+    }
+
+    const items = await fetchSearch(entity, q, null, FILTER_SEARCH_LIMIT)
+    if (!hasQ) {
+      filterOptionCache[entity] = items
+    }
+    ui.setFilterOptions(entity, items)
+  } catch (err) {
+    if (err?.name === 'AbortError') return
+    ui.setStatus(`Busca de ${entity.toUpperCase()} indisponivel: ${String(err?.message || err)}`)
+  }
+}
+
+async function preloadFilterOptions() {
+  const entities = ['uf', 'bioma', 'uc', 'ti']
+  await Promise.all(
+    entities.map(async (entity) => {
+      try {
+        const items = await fetchOptions(entity, 500)
+        filterOptionCache[entity] = items
+        ui.setFilterOptions(entity, items)
+      } catch (err) {
+        ui.setStatus(`Falha ao carregar opcoes de ${entity.toUpperCase()}: ${String(err?.message || err)}`)
+      }
+    }),
+  )
+}
+
+function applySelectFilter(filterKey, value, label) {
+  const next = value ? String(value).trim() : null
+
   if (filterKey === 'mun') {
-    void applyMunicipalitySelection(value, { withBounds })
+    if (!next) {
+      setFilters({ mun: null })
+      clearFilterLabel('mun')
+      setFilterUi()
+      refreshAllDebounced()
+      return
+    }
+    void applyMunicipalitySelection(next, { withBounds: true, label })
+    return
+  }
+
+  if (filterKey === 'uf') {
+    if (!next) {
+      setFilters({ uf: null, mun: null })
+      clearFilterLabel('uf')
+      clearFilterLabel('mun')
+      setMunLayerEnabled(false)
+      setFilterUi()
+      mapCtl.fitBrazil()
+      refreshAllDebounced()
+      return
+    }
+    const changedUf = state.uf !== next
+    setFilters({ uf: next, mun: changedUf ? null : state.mun })
+    setFilterLabel('uf', next, label || next)
+    if (changedUf) {
+      clearFilterLabel('mun')
+      ui.setFilterSelect('mun', null)
+      ui.setFilterSearchValue('mun', '')
+      void refreshSearchOptions('mun', '')
+    }
+    setMunLayerEnabled(true)
+    setFilterUi()
+    void fetchBoundsAndFit('uf', next)
+    refreshAllDebounced()
+    return
+  }
+
+  const patch = { [filterKey]: next }
+  if (filterKey === 'uc') {
+    patch.ti = null
+    clearFilterLabel('ti')
+  }
+  if (filterKey === 'ti') {
+    patch.uc = null
+    clearFilterLabel('uc')
+  }
+  setFilters(patch)
+
+  if (next) {
+    setFilterLabel(filterKey, next, label || next)
+    if (filterKey === 'uc' || filterKey === 'ti') {
+      pendingOverlayFocus = { entity: filterKey, key: next }
+    }
+    if (filterKey === 'bioma') {
+      void fetchBoundsAndFit('bioma', next)
+    }
+  } else {
+    clearFilterLabel(filterKey)
+    if (filterKey === 'uc' || filterKey === 'ti') {
+      pendingOverlayFocus = null
+      mapCtl.clearSelectionOverlay()
+    }
+  }
+
+  setFilterUi()
+  refreshAllDebounced()
+}
+
+function toggleFilterAndRefresh(filterKey, value, { withBounds = true, label = null } = {}) {
+  if (filterKey === 'mun') {
+    void applyMunicipalitySelection(value, { withBounds, label })
     return
   }
 
@@ -274,9 +466,11 @@ function toggleFilterAndRefresh(filterKey, value, { withBounds = true } = {}) {
   toggleFilter(filterKey, value)
   if (filterKey === 'uc' && state.uc) {
     setFilters({ ti: null })
+    clearFilterLabel('ti')
   }
   if (filterKey === 'ti' && state.ti) {
     setFilters({ uc: null })
+    clearFilterLabel('uc')
   }
   if ((filterKey === 'uc' || filterKey === 'ti') && withBounds) {
     const nextValue = state[filterKey]
@@ -290,14 +484,23 @@ function toggleFilterAndRefresh(filterKey, value, { withBounds = true } = {}) {
   if (filterKey === 'uf') {
     if (!state.uf) {
       setFilters({ mun: null })
+      clearFilterLabel('uf')
+      clearFilterLabel('mun')
       setMunLayerEnabled(false)
       if (prevUf) mapCtl.fitBrazil()
     } else if (prevUf && state.uf !== prevUf) {
       setFilters({ mun: null })
+      clearFilterLabel('mun')
+      setFilterLabel('uf', state.uf, label || state.uf)
       setMunLayerEnabled(true)
     } else {
+      setFilterLabel('uf', state.uf, label || state.uf)
       setMunLayerEnabled(true)
     }
+  } else if (state[filterKey]) {
+    setFilterLabel(filterKey, state[filterKey], label || state[filterKey])
+  } else {
+    clearFilterLabel(filterKey)
   }
 
   ensureValidFilterState()
@@ -540,6 +743,14 @@ function applyInputs() {
 function clearFilters() {
   const { from, to } = defaultRangeLast30()
   clearDimensionFilters()
+  for (const key of FILTER_LABEL_KEYS) {
+    clearFilterLabel(key)
+  }
+  ui.setFilterSearchValue('uf', '')
+  ui.setFilterSearchValue('mun', '')
+  ui.setFilterSearchValue('bioma', '')
+  ui.setFilterSearchValue('uc', '')
+  ui.setFilterSearchValue('ti', '')
   if (pointsAbort) {
     pointsAbort.abort()
     pointsAbort = null
@@ -575,8 +786,8 @@ const refreshPointsDebounced = debounce(() => {
 }, 320)
 
 const ui = initUi()
-const mapCtl = initMap((filterKey, value) => {
-  toggleFilterAndRefresh(filterKey, value, { withBounds: false })
+const mapCtl = initMap((filterKey, value, label) => {
+  toggleFilterAndRefresh(filterKey, value, { withBounds: false, label })
 })
 mapCtl.onViewportChange(() => {
   refreshPointsDebounced()
@@ -584,30 +795,37 @@ mapCtl.onViewportChange(() => {
 const chartsCtl = initCharts((filterKey, item) => {
   const key = item?.key
   if (!key) return
-  toggleFilterAndRefresh(filterKey, key, { withBounds: true })
+  toggleFilterAndRefresh(filterKey, key, { withBounds: true, label: item?.label || key })
 })
 
 ui.onApply(applyInputs)
 ui.onClear(clearFilters)
 ui.onLast30(clearFilters)
-ui.onUfSelect((value) => {
-  const uf = value ? String(value).trim().toUpperCase() : null
-  if (!uf) {
-    setFilters({ uf: null, mun: null })
-    setMunLayerEnabled(false)
-    setFilterUi()
-    mapCtl.fitBrazil()
-    refreshAllDebounced()
-    return
-  }
-
-  const changedUf = state.uf !== uf
-  setFilters({ uf, mun: changedUf ? null : state.mun })
-  setMunLayerEnabled(true)
-  setFilterUi()
-  void fetchBoundsAndFit('uf', uf)
-  refreshAllDebounced()
+ui.onFilterSelect('uf', (value, label) => {
+  applySelectFilter('uf', value, label)
 })
+ui.onFilterSelect('mun', (value, label) => {
+  applySelectFilter('mun', value, label)
+})
+ui.onFilterSelect('bioma', (value, label) => {
+  applySelectFilter('bioma', value, label)
+})
+ui.onFilterSelect('uc', (value, label) => {
+  applySelectFilter('uc', value, label)
+})
+ui.onFilterSelect('ti', (value, label) => {
+  applySelectFilter('ti', value, label)
+})
+const onSearchUf = debounce((q) => { void refreshSearchOptions('uf', q) }, 300)
+const onSearchMun = debounce((q) => { void refreshSearchOptions('mun', q) }, 300)
+const onSearchBioma = debounce((q) => { void refreshSearchOptions('bioma', q) }, 300)
+const onSearchUc = debounce((q) => { void refreshSearchOptions('uc', q) }, 300)
+const onSearchTi = debounce((q) => { void refreshSearchOptions('ti', q) }, 300)
+ui.onFilterSearch('uf', onSearchUf)
+ui.onFilterSearch('mun', onSearchMun)
+ui.onFilterSearch('bioma', onSearchBioma)
+ui.onFilterSearch('uc', onSearchUc)
+ui.onFilterSearch('ti', onSearchTi)
 ui.onMunLayerToggle((checked) => {
   if (!state.uf) {
     setMunLayerEnabled(false)
@@ -662,22 +880,33 @@ ui.onPointsDateCustom((dateIso) => {
 ui.onChipRemove((filterKey) => {
   if (filterKey === 'uf') {
     setFilters({ uf: null, mun: null })
+    clearFilterLabel('uf')
+    clearFilterLabel('mun')
   } else {
     setFilters({ [filterKey]: null })
+    clearFilterLabel(filterKey)
   }
   if (filterKey === 'uf') {
     setMunLayerEnabled(false)
+    ui.setFilterSelect('mun', null)
+    ui.setFilterOptions('mun', [])
+    ui.setFilterSearchValue('mun', '')
     mapCtl.fitBrazil()
   }
   if (filterKey === 'uc' || filterKey === 'ti') {
+    if (filterKey === 'uc') {
+      clearFilterLabel('uc')
+    } else {
+      clearFilterLabel('ti')
+    }
     pendingOverlayFocus = null
     mapCtl.clearSelectionOverlay()
   }
   setFilterUi()
   refreshAllDebounced()
 })
-ui.onTopTablePick((filterKey, value) => {
-  toggleFilterAndRefresh(filterKey, value, { withBounds: true })
+ui.onTopTablePick((filterKey, value, label) => {
+  toggleFilterAndRefresh(filterKey, value, { withBounds: true, label })
 })
 
 {
@@ -687,5 +916,9 @@ ui.onTopTablePick((filterKey, value) => {
   ui.setInputs({ from, to })
   setFilterUi()
 }
+
+void preloadFilterOptions().then(() => {
+  void refreshSearchOptions('mun', '')
+})
 
 void refreshAll()
